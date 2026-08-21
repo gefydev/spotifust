@@ -119,6 +119,7 @@ pub struct AlbumDetailTrack {
     pub artist: String,
     pub duration_ms: u32,
     pub uri: String,
+    pub artist_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,6 +176,11 @@ pub async fn fetch_album_details(
                 .as_ref()
                 .map_or_else(String::new, ToString::to_string);
             let uri = simple_track.id.as_ref().map_or_else(String::new, Id::uri);
+            let artist_id = simple_track
+                .artists
+                .first()
+                .and_then(|a| a.id.as_ref())
+                .map_or_else(String::new, ToString::to_string);
 
             tracks.push(AlbumDetailTrack {
                 id: track_id,
@@ -183,6 +189,7 @@ pub async fn fetch_album_details(
                 artist,
                 duration_ms: u32::try_from(simple_track.duration.num_milliseconds()).unwrap_or(0),
                 uri,
+                artist_id: (!artist_id.is_empty()).then_some(artist_id),
             });
         }
 
@@ -273,6 +280,7 @@ mod tests {
                 artist: "The Midnight".to_string(),
                 duration_ms: 200_000,
                 uri: "spotify:track:t_1".to_string(),
+                artist_id: None,
             }],
         };
         assert_eq!(ad.tracks.len(), 1);

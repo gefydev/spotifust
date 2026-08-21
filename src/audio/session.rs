@@ -15,10 +15,6 @@ pub enum PlayerCommand {
     Play(String),
     Pause,
     Resume,
-    #[allow(dead_code)]
-    SkipNext,
-    #[allow(dead_code)]
-    SkipPrev,
     Seek(u32),
     Volume(f32),
 }
@@ -81,7 +77,6 @@ pub async fn connect_with_token(access_token: &str) -> Result<AudioSession, AppE
         let mut is_playing = false;
         let mut position_ms = 0;
         let mut last_update = tokio::time::Instant::now();
-        let mut current_uri: Option<String> = None;
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -91,6 +86,9 @@ pub async fn connect_with_token(access_token: &str) -> Result<AudioSession, AppE
                     if let Some(cmd) = maybe_cmd {
                         match cmd {
                             PlayerCommand::Play(uri) => {
+                                // Drop any stale buffered samples from a previous track so the
+                                // new track starts immediately instead of playing old audio first.
+                                rodio_sink_cmd.clear();
                                 rodio_sink_cmd.play();
                                 if uri.trim().is_empty() {
                                     eprintln!("Cannot play track with empty Spotify URI");
@@ -104,7 +102,6 @@ pub async fn connect_with_token(access_token: &str) -> Result<AudioSession, AppE
                                         Ok(spotify_uri) => {
                                             player_cmd.load(spotify_uri, true, 0);
                                             player_cmd.play();
-                                            current_uri = Some(uri);
                                             is_playing = true;
                                             position_ms = 0;
                                             last_update = tokio::time::Instant::now();
@@ -128,26 +125,6 @@ pub async fn connect_with_token(access_token: &str) -> Result<AudioSession, AppE
                                 is_playing = true;
                                 last_update = tokio::time::Instant::now();
                                 let _ = event_tx.send(AudioSessionEvent::PositionMs(position_ms)).await;
-                            }
-                            PlayerCommand::SkipNext | PlayerCommand::SkipPrev => {
-                                if let Some(ref uri) = current_uri {
-                                    let uri_to_parse = if uri.starts_with("spotify:") {
-                                        uri.clone()
-                                    } else {
-                                        format!("spotify:track:{uri}")
-                                    };
-                                    match SpotifyUri::from_uri(&uri_to_parse) {
-                                        Ok(spotify_uri) => {
-                                            player_cmd.load(spotify_uri, true, 0);
-                                            is_playing = true;
-                                            position_ms = 0;
-                                            last_update = tokio::time::Instant::now();
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Invalid Spotify URI '{uri}' on skip: {e}");
-                                        }
-                                    }
-                                }
                             }
                             PlayerCommand::Seek(pos_ms) => {
                                 rodio_sink_cmd.clear();

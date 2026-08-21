@@ -139,6 +139,12 @@ impl DiskMetadataCache {
         let json_str = fs::read_to_string(file_path).ok()?;
         serde_json::from_str(&json_str).ok()
     }
+
+    /// Removes a single cached entry by key (used on logout to drop session data).
+    pub fn remove(key: &str) {
+        let file_path = get_cache_dir().join("metadata").join(format!("{key}.json"));
+        let _ = fs::remove_file(file_path);
+    }
 }
 
 #[cfg(test)]
@@ -176,5 +182,16 @@ mod tests {
 
         let loaded: Option<Vec<String>> = DiskMetadataCache::load(key);
         assert_eq!(loaded, Some(data));
+    }
+
+    #[test]
+    fn test_disk_metadata_cache_remove() {
+        let key = "test_key_remove_spotifust";
+        let data = vec!["item".to_string()];
+        assert!(DiskMetadataCache::save(key, &data).is_ok());
+        assert!(DiskMetadataCache::load::<Vec<String>>(key).is_some());
+
+        DiskMetadataCache::remove(key);
+        assert!(DiskMetadataCache::load::<Vec<String>>(key).is_none());
     }
 }

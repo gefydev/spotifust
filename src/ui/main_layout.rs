@@ -73,11 +73,14 @@ pub fn view<'a>(
     sidebar_filter: SidebarFilter,
     selected_playlist: Option<&'a crate::app::SelectedPlaylistState>,
     selected_album: Option<&'a crate::app::SelectedAlbumState>,
+    selected_artist: Option<&'a crate::app::SelectedArtistState>,
     user_queue: &'a [crate::app::TrackInfo],
     context_queue: &'a [crate::app::TrackInfo],
     context_index: usize,
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
     window_width: f32,
+    cursor_position: iced::Point,
+    account_menu_open: bool,
     active_context_menu: Option<&'a crate::app::ContextMenuState>,
     active_modal: Option<&'a crate::app::ActiveModal>,
     toast_notification: Option<&'a String>,
@@ -95,11 +98,13 @@ pub fn view<'a>(
         selected_playlist,
         selected_album,
         loaded_images,
+        cursor_position,
     );
     let main_content = view_main_content(
         *nav_item,
         selected_playlist,
         selected_album,
+        selected_artist,
         user_playlists,
         user_albums,
         user_top_tracks,
@@ -108,6 +113,7 @@ pub fn view<'a>(
         search_results,
         is_searching,
         loaded_images,
+        cursor_position,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -163,6 +169,10 @@ pub fn view<'a>(
 
     if toast_notification.is_some() {
         stack = stack.push(crate::ui::context_menu::view_toasts(toast_notification));
+    }
+
+    if account_menu_open {
+        stack = stack.push(view_account_menu(user_profile, loaded_images));
     }
 
     stack.into()
@@ -258,16 +268,29 @@ fn view_top_bar<'a>(
         avatar_url,
         loaded_images,
         Icon::User,
-        40.0,
+        32.0,
         theme::RADIUS_PILL,
     );
 
     let user_avatar_btn = Button::new(user_avatar_content)
         .padding(0)
-        .on_press(Message::MockAction)
-        .style(|_theme, _status| iced::widget::button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
-            ..Default::default()
+        .on_press(Message::ToggleAccountMenu)
+        .style(|_theme, status| {
+            let base = iced::widget::button::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                border: Border {
+                    radius: theme::RADIUS_PILL.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            match status {
+                iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                    background: Some(Background::Color(theme::SURFACE_HOVER)),
+                    ..base
+                },
+                _ => base,
+            }
         });
 
     let settings_btn = icon_button_circle(
@@ -313,6 +336,7 @@ fn view_top_bar<'a>(
 }
 
 #[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)]
 fn view_sidebar_panel<'a>(
     width: f32,
     playlists: &'a [crate::api::playlist::PlaylistSummary],
@@ -321,6 +345,7 @@ fn view_sidebar_panel<'a>(
     selected_playlist: Option<&'a crate::app::SelectedPlaylistState>,
     selected_album: Option<&'a crate::app::SelectedAlbumState>,
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
+    cursor_position: iced::Point,
 ) -> Element<'a, Message> {
     let is_compact = width < 120.0;
 
@@ -502,7 +527,7 @@ fn view_sidebar_panel<'a>(
             let item_with_context = iced::widget::mouse_area(item_element).on_right_press(
                 Message::OpenPlaylistContextMenu {
                     playlist: p_clone,
-                    position: iced::Point::new(200.0, 300.0),
+                    position: cursor_position,
                 },
             );
 
@@ -530,7 +555,7 @@ fn view_sidebar_panel<'a>(
             let item_with_context = iced::widget::mouse_area(item_element).on_right_press(
                 Message::OpenAlbumContextMenu {
                     album: a_clone,
-                    position: iced::Point::new(200.0, 300.0),
+                    position: cursor_position,
                 },
             );
 
@@ -600,6 +625,7 @@ fn view_main_content<'a>(
     current_nav: NavigationItem,
     selected_playlist: Option<&'a crate::app::SelectedPlaylistState>,
     selected_album: Option<&'a crate::app::SelectedAlbumState>,
+    selected_artist: Option<&'a crate::app::SelectedArtistState>,
     user_playlists: &'a [crate::api::playlist::PlaylistSummary],
     user_albums: &'a [crate::api::album::AlbumSummary],
     user_top_tracks: &'a [crate::api::tracks::TopTrack],
@@ -608,13 +634,18 @@ fn view_main_content<'a>(
     search_results: &'a crate::api::search::SearchResults,
     is_searching: bool,
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
+    cursor_position: iced::Point,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
         return view_settings_page();
     }
 
     if current_nav == NavigationItem::Search {
-        return view_search_results(search_results, is_searching, loaded_images);
+        return view_search_results(search_results, is_searching, loaded_images, cursor_position);
+    }
+
+    if let Some(sa) = selected_artist {
+        return view_artist_page(sa, loaded_images, cursor_position);
     }
 
     if let Some(sp) = selected_playlist {
@@ -823,6 +854,8 @@ fn view_main_content<'a>(
                     duration_ms: track.duration_ms,
                     image_url: track.image_url.clone(),
                     uri: uri.clone(),
+                    album_id: track.album_id.clone(),
+                    artist_id: track.artist_id.clone(),
                 };
 
                 let track_item = Button::new(
@@ -855,7 +888,7 @@ fn view_main_content<'a>(
                     Message::OpenTrackContextMenu {
                         track: track_info,
                         from_playlist_id: Some(pl_id),
-                        position: iced::Point::new(450.0, 300.0),
+                        position: cursor_position,
                     },
                 );
 
@@ -1042,6 +1075,8 @@ fn view_main_content<'a>(
                     duration_ms: track.duration_ms,
                     image_url: sa.image_url.clone(),
                     uri: uri.clone(),
+                    album_id: Some(sa.id.clone()),
+                    artist_id: track.artist_id.clone(),
                 };
 
                 let track_item = Button::new(
@@ -1073,7 +1108,7 @@ fn view_main_content<'a>(
                     Message::OpenTrackContextMenu {
                         track: track_info,
                         from_playlist_id: None,
-                        position: iced::Point::new(450.0, 300.0),
+                        position: cursor_position,
                     },
                 );
 
@@ -1196,7 +1231,7 @@ fn view_main_content<'a>(
             let card_with_menu =
                 iced::widget::mouse_area(card).on_right_press(Message::OpenPlaylistContextMenu {
                     playlist: p_clone,
-                    position: iced::Point::new(300.0, 300.0),
+                    position: cursor_position,
                 });
             if idx < 3 {
                 row_1 = row_1.push(card_with_menu);
@@ -1217,7 +1252,7 @@ fn view_main_content<'a>(
             let card_with_menu =
                 iced::widget::mouse_area(card).on_right_press(Message::OpenAlbumContextMenu {
                     album: a_clone,
-                    position: iced::Point::new(300.0, 300.0),
+                    position: cursor_position,
                 });
             if idx < 3 {
                 row_1 = row_1.push(card_with_menu);
@@ -1256,6 +1291,8 @@ fn view_main_content<'a>(
                 duration_ms: track.duration_ms,
                 image_url: track.image_url.clone(),
                 uri: track.uri.clone(),
+                album_id: track.album_id.clone(),
+                artist_id: track.artist_id.clone(),
             };
             let card = media_card_with_image(
                 &track.title,
@@ -1269,7 +1306,7 @@ fn view_main_content<'a>(
                 iced::widget::mouse_area(card).on_right_press(Message::OpenTrackContextMenu {
                     track: track_info,
                     from_playlist_id: None,
-                    position: iced::Point::new(400.0, 350.0),
+                    position: cursor_position,
                 });
             row = row.push(card_with_menu);
         }
@@ -1307,7 +1344,7 @@ fn view_main_content<'a>(
             let card_with_menu =
                 iced::widget::mouse_area(card).on_right_press(Message::OpenAlbumContextMenu {
                     album: a_clone,
-                    position: iced::Point::new(400.0, 450.0),
+                    position: cursor_position,
                 });
             row = row.push(card_with_menu);
         }
@@ -1345,7 +1382,7 @@ fn view_main_content<'a>(
             let card_with_menu =
                 iced::widget::mouse_area(card).on_right_press(Message::OpenPlaylistContextMenu {
                     playlist: p_clone,
-                    position: iced::Point::new(400.0, 550.0),
+                    position: cursor_position,
                 });
             row = row.push(card_with_menu);
         }
@@ -1383,7 +1420,7 @@ fn view_main_content<'a>(
             let card_with_menu =
                 iced::widget::mouse_area(card).on_right_press(Message::OpenAlbumContextMenu {
                     album: a_clone,
-                    position: iced::Point::new(400.0, 650.0),
+                    position: cursor_position,
                 });
             row = row.push(card_with_menu);
         }
@@ -1431,6 +1468,289 @@ fn view_main_content<'a>(
             ..Default::default()
         })
         .into()
+}
+
+#[allow(clippy::too_many_lines)]
+fn view_artist_page<'a>(
+    artist: &'a crate::app::SelectedArtistState,
+    loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
+    cursor_position: iced::Point,
+) -> Element<'a, Message> {
+    let cover = view_image_or_icon(
+        artist.image_url.as_deref(),
+        loaded_images,
+        Icon::User,
+        200.0,
+        theme::RADIUS_LG,
+    );
+
+    let follow_btn: Element<'a, Message> = match artist.is_followed {
+        Some(true) => Button::new(
+            Text::new("Siguiendo")
+                .size(13)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                })
+                .color(Color::BLACK),
+        )
+        .padding([10, 24])
+        .on_press(Message::FollowArtistToggle(artist.id.clone(), true))
+        .style(|_t, _s| iced::widget::button::Style {
+            background: Some(Background::Color(theme::ACCENT)),
+            border: Border {
+                radius: theme::RADIUS_PILL.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into(),
+        Some(false) => Button::new(
+            Text::new("Seguir")
+                .size(13)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                })
+                .color(theme::TEXT_PRIMARY),
+        )
+        .padding([10, 24])
+        .on_press(Message::FollowArtistToggle(artist.id.clone(), false))
+        .style(|_t, _s| iced::widget::button::Style {
+            background: Some(Background::Color(theme::SURFACE_HOVER)),
+            border: Border {
+                radius: theme::RADIUS_PILL.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into(),
+        None => Space::new().height(Length::Fixed(0.0)).into(),
+    };
+
+    let genres_text = if artist.genres.is_empty() {
+        String::new()
+    } else {
+        artist.genres.join(", ")
+    };
+    let meta_line = [
+        format_count(artist.followers),
+        "seguidores".to_string(),
+        genres_text,
+    ]
+    .into_iter()
+    .filter(|s| !s.is_empty())
+    .collect::<Vec<_>>()
+    .join(" • ");
+
+    let header = Row::new()
+        .spacing(24)
+        .align_y(Alignment::Center)
+        .push(cover)
+        .push(
+            Column::new()
+                .spacing(8)
+                .push(
+                    Text::new("ARTISTA")
+                        .size(11)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..Default::default()
+                        })
+                        .color(theme::ACCENT),
+                )
+                .push(
+                    Text::new(&artist.name)
+                        .size(32)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..Default::default()
+                        })
+                        .color(theme::TEXT_PRIMARY),
+                )
+                .push(Text::new(meta_line).size(13).color(theme::TEXT_SECONDARY))
+                .push(follow_btn),
+        );
+
+    let mut body = Column::new().spacing(24);
+
+    if artist.is_loading {
+        body = body
+            .push(render_skeleton_rows(6))
+            .push(render_skeleton_cards(5));
+    } else {
+        if !artist.top_tracks.is_empty() {
+            let mut tracks_col = Column::new().spacing(6);
+            for (idx, track) in artist.top_tracks.iter().take(10).enumerate() {
+                let dur_str = format_duration(track.duration_ms);
+                let uri = track.uri.clone();
+                let track_info = crate::app::TrackInfo {
+                    title: track.title.clone(),
+                    artist: artist.name.clone(),
+                    album: track.album.clone(),
+                    duration_ms: track.duration_ms,
+                    image_url: track.image_url.clone(),
+                    uri: uri.clone(),
+                    album_id: track.album_id.clone(),
+                    artist_id: Some(artist.id.clone()),
+                };
+
+                let row = Row::new()
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .push(
+                        Text::new((idx + 1).to_string())
+                            .size(13)
+                            .color(theme::TEXT_SECONDARY)
+                            .width(Length::Fixed(24.0)),
+                    )
+                    .push(
+                        Text::new(&track.title)
+                            .size(14)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..Default::default()
+                            })
+                            .color(theme::TEXT_PRIMARY)
+                            .width(Length::FillPortion(3)),
+                    )
+                    .push(
+                        Text::new(&track.album)
+                            .size(13)
+                            .color(theme::TEXT_SECONDARY)
+                            .width(Length::FillPortion(2)),
+                    )
+                    .push(
+                        Text::new(dur_str)
+                            .size(13)
+                            .color(theme::TEXT_SECONDARY)
+                            .width(Length::Fixed(60.0)),
+                    );
+
+                let item = Button::new(Container::new(row).padding([8, 12]).width(Length::Fill))
+                    .padding(0)
+                    .on_press(Message::PlayTrack(uri))
+                    .style(|_theme, status| {
+                        let base = iced::widget::button::Style {
+                            background: Some(Background::Color(Color::TRANSPARENT)),
+                            border: Border {
+                                radius: theme::RADIUS_MD.into(),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        };
+                        match status {
+                            iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                                background: Some(Background::Color(theme::SURFACE_HOVER)),
+                                ..base
+                            },
+                            _ => base,
+                        }
+                    });
+
+                let item_with_menu =
+                    iced::widget::mouse_area(item).on_right_press(Message::OpenTrackContextMenu {
+                        track: track_info,
+                        from_playlist_id: None,
+                        position: cursor_position,
+                    });
+
+                tracks_col = tracks_col.push(item_with_menu);
+            }
+
+            body = body.push(
+                Column::new()
+                    .spacing(10)
+                    .push(
+                        Text::new("Popular")
+                            .size(22)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..Default::default()
+                            })
+                            .color(theme::TEXT_PRIMARY),
+                    )
+                    .push(tracks_col),
+            );
+        }
+
+        if !artist.albums.is_empty() {
+            let mut albums_row = Row::new().spacing(16);
+            for album in artist.albums.iter().take(10) {
+                let card = media_card_with_image(
+                    &album.name,
+                    &album.release_date,
+                    album.image_url.as_deref(),
+                    loaded_images,
+                    Icon::Album,
+                    Message::SelectAlbum(album.id.clone()),
+                );
+                let album_summary = crate::api::album::AlbumSummary {
+                    id: album.id.clone(),
+                    name: album.name.clone(),
+                    artist_name: artist.name.clone(),
+                    image_url: album.image_url.clone(),
+                    total_tracks: 0,
+                    release_date: album.release_date.clone(),
+                };
+                albums_row = albums_row.push(iced::widget::mouse_area(card).on_right_press(
+                    Message::OpenAlbumContextMenu {
+                        album: album_summary,
+                        position: cursor_position,
+                    },
+                ));
+            }
+
+            body = body.push(
+                Column::new()
+                    .spacing(10)
+                    .push(
+                        Text::new("Discografía")
+                            .size(22)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..Default::default()
+                            })
+                            .color(theme::TEXT_PRIMARY),
+                    )
+                    .push(scroll_row(albums_row)),
+            );
+        }
+    }
+
+    let page_column = Column::new().spacing(20).push(header).push(body);
+
+    let scrollable = thin_scrollable(Container::new(page_column).padding(iced::Padding {
+        top: 0.0,
+        right: 16.0,
+        bottom: 0.0,
+        left: 0.0,
+    }))
+    .height(Length::Fill);
+
+    Container::new(scrollable)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(24)
+        .style(|_theme: &Theme| container::Style {
+            background: Some(Background::Color(theme::SURFACE_MAIN)),
+            border: Border {
+                radius: theme::RADIUS_LG.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+fn format_count(n: u32) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", f64::from(n) / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}K", f64::from(n) / 1_000.0)
+    } else {
+        n.to_string()
+    }
 }
 
 fn scroll_row(content: Row<'_, Message>) -> Element<'_, Message> {
@@ -2017,7 +2337,7 @@ fn view_playback_bar<'a>(
         });
 
     let volume_icon = if playback.is_muted || playback.volume == 0.0 {
-        Icon::X
+        Icon::VolumeMute
     } else {
         Icon::Volume
     };
@@ -2630,6 +2950,7 @@ fn view_search_results<'a>(
     results: &'a crate::api::search::SearchResults,
     is_searching: bool,
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
+    cursor_position: iced::Point,
 ) -> Element<'a, Message> {
     if is_searching {
         return Container::new(
@@ -2732,13 +3053,21 @@ fn view_search_results<'a>(
     let mut artists_row = Row::new().spacing(16);
     for artist in results.artists.iter().take(6) {
         let a_id = artist.id.clone();
-        artists_row = artists_row.push(media_card_with_image(
+        let a_name = artist.name.clone();
+        let card = media_card_with_image(
             &artist.name,
-            "Artist",
+            "Artista",
             artist.image_url.as_deref(),
             loaded_images,
             Icon::User,
-            Message::SelectArtist(a_id),
+            Message::SelectArtist(a_id.clone()),
+        );
+        artists_row = artists_row.push(iced::widget::mouse_area(card).on_right_press(
+            Message::OpenArtistContextMenu {
+                artist_id: a_id,
+                artist_name: a_name,
+                position: cursor_position,
+            },
         ));
     }
 
@@ -2746,13 +3075,27 @@ fn view_search_results<'a>(
     for album in results.albums.iter().take(6) {
         let subtitle = format!("{} • Album", album.artist_name);
         let a_id = album.id.clone();
-        albums_row = albums_row.push(media_card_with_image(
+        let card = media_card_with_image(
             &album.name,
             &subtitle,
             album.image_url.as_deref(),
             loaded_images,
             Icon::Album,
-            Message::SelectAlbum(a_id),
+            Message::SelectAlbum(a_id.clone()),
+        );
+        let album_summary = crate::api::album::AlbumSummary {
+            id: album.id.clone(),
+            name: album.name.clone(),
+            artist_name: album.artist_name.clone(),
+            image_url: album.image_url.clone(),
+            total_tracks: 0,
+            release_date: String::new(),
+        };
+        albums_row = albums_row.push(iced::widget::mouse_area(card).on_right_press(
+            Message::OpenAlbumContextMenu {
+                album: album_summary,
+                position: cursor_position,
+            },
         ));
     }
 
@@ -3165,6 +3508,138 @@ fn view_settings_page<'a>() -> Element<'a, Message> {
             }),
     )
     .into()
+}
+
+/// Account popup menu shown when the user clicks the avatar in the top bar.
+/// For now it only offers "Log out" — the session is fully wiped and the app
+/// returns to the login screen.
+#[allow(clippy::too_many_lines)]
+fn view_account_menu<'a>(
+    user_profile: Option<&'a crate::api::user::UserProfile>,
+    loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
+) -> Element<'a, Message> {
+    let avatar_url = user_profile.and_then(|p| p.avatar_url.as_deref());
+    let display_name = user_profile.map_or("Spotifust", |p| p.display_name.as_str());
+
+    let header = Row::new()
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .push(view_image_or_icon(
+            avatar_url,
+            loaded_images,
+            Icon::User,
+            32.0,
+            theme::RADIUS_PILL,
+        ))
+        .push(
+            Column::new()
+                .spacing(2)
+                .push(
+                    Text::new(display_name)
+                        .size(14)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..Default::default()
+                        })
+                        .color(theme::TEXT_PRIMARY),
+                )
+                .push(Text::new("Cuenta").size(11).color(theme::TEXT_SECONDARY)),
+        );
+
+    let divider = Container::new(Space::new())
+        .width(Length::Fill)
+        .height(Length::Fixed(1.0))
+        .style(|_theme| container::Style {
+            background: Some(Background::Color(theme::BORDER_SUBTLE)),
+            ..Default::default()
+        });
+
+    let logout_btn = Button::new(
+        Row::new()
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(Icon::X.view_colored(16.0, theme::COLOR_ERROR))
+            .push(
+                Text::new("Cerrar sesión")
+                    .size(13)
+                    .color(theme::TEXT_PRIMARY)
+                    .width(Length::Fill),
+            ),
+    )
+    .padding([8, 12])
+    .width(Length::Fill)
+    .on_press(Message::LogoutRequested)
+    .style(|_t, status| {
+        let base = iced::widget::button::Style {
+            background: Some(Background::Color(Color::TRANSPARENT)),
+            border: Border {
+                radius: theme::RADIUS_SM.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        match status {
+            iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                background: Some(Background::Color(theme::SURFACE_HOVER)),
+                ..base
+            },
+            _ => base,
+        }
+    });
+
+    let menu_card = Container::new(
+        Column::new()
+            .spacing(6)
+            .push(header)
+            .push(divider)
+            .push(logout_btn),
+    )
+    .padding(12)
+    .width(Length::Fixed(240.0))
+    .style(|_theme: &Theme| container::Style {
+        background: Some(Background::Color(theme::SURFACE_CARD)),
+        border: Border {
+            radius: theme::RADIUS_MD.into(),
+            color: theme::BORDER_SUBTLE,
+            width: 1.0,
+        },
+        shadow: iced::Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+            offset: iced::Vector::new(0.0, 4.0),
+            blur_radius: 12.0,
+        },
+        ..Default::default()
+    });
+
+    // Fully transparent backdrop: keeps the UI visible while any click outside
+    // the menu closes it.
+    let backdrop = Button::new(
+        iced::widget::Space::new()
+            .width(Length::Fill)
+            .height(Length::Fill),
+    )
+    .style(|_t, _s| iced::widget::button::Style {
+        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.0))),
+        ..Default::default()
+    })
+    .on_press(Message::CloseAccountMenu);
+
+    iced::widget::Stack::new()
+        .push(backdrop)
+        .push(
+            Container::new(menu_card)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(iced::alignment::Horizontal::Right)
+                .align_y(iced::alignment::Vertical::Top)
+                .padding(iced::Padding {
+                    top: 60.0,
+                    right: 24.0,
+                    bottom: 0.0,
+                    left: 0.0,
+                }),
+        )
+        .into()
 }
 
 fn view_mini_player<'a>(

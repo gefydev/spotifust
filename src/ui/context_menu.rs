@@ -57,19 +57,29 @@ pub fn view_context_menu(state: &crate::app::ContextMenuState) -> Element<'_, Me
                 Message::OpenQueuePanel,
             ));
 
-            // Go to Album
-            menu_col = menu_col.push(menu_item_button(
-                Icon::Album,
-                format!("Ir al álbum ({album_name})"),
-                Message::SelectAlbum(album_name),
-            ));
+            // Go to Album (only when the real album ID is known)
+            if let Some(album_id) = track.album_id.clone() {
+                menu_col = menu_col.push(menu_item_button(
+                    Icon::Album,
+                    format!("Ir al álbum ({album_name})"),
+                    Message::SelectAlbum(album_id),
+                ));
+            }
 
-            // Go to Artist
-            menu_col = menu_col.push(menu_item_button(
-                Icon::User,
-                format!("Ir al artista ({artist_name})"),
-                Message::SelectArtist(artist_name),
-            ));
+            // Go to Artist: prefer the known artist ID, else resolve by name
+            if let Some(artist_id) = track.artist_id.clone() {
+                menu_col = menu_col.push(menu_item_button(
+                    Icon::User,
+                    format!("Ir al artista ({artist_name})"),
+                    Message::SelectArtist(artist_id),
+                ));
+            } else {
+                menu_col = menu_col.push(menu_item_button(
+                    Icon::User,
+                    format!("Ir al artista ({artist_name})"),
+                    Message::SelectArtistByName(artist_name),
+                ));
+            }
         }
         ContextMenuTarget::Album(album) => {
             let album_id = album.id.clone();
@@ -91,7 +101,7 @@ pub fn view_context_menu(state: &crate::app::ContextMenuState) -> Element<'_, Me
             menu_col = menu_col.push(menu_item_button(
                 Icon::Plus,
                 "Agregar canciones del álbum a playlist",
-                Message::OpenAddToPlaylistModal(vec![album_id]),
+                Message::OpenAddAlbumToPlaylistModal(album_id),
             ));
         }
         ContextMenuTarget::Playlist(playlist) => {
@@ -132,21 +142,36 @@ pub fn view_context_menu(state: &crate::app::ContextMenuState) -> Element<'_, Me
         ContextMenuTarget::Artist {
             artist_id,
             artist_name,
+            currently_followed,
         } => {
             let aid = artist_id.clone();
             let aname = artist_name.clone();
 
             menu_col = menu_col.push(menu_item_button(
                 Icon::User,
-                format!("Seguir a {aname}"),
-                Message::FollowArtistToggle(aid.clone(), false),
+                format!("Ver perfil de {aname}"),
+                Message::SelectArtist(aid.clone()),
             ));
 
-            menu_col = menu_col.push(menu_item_button(
-                Icon::Trash,
-                format!("Dejar de seguir a {aname}"),
-                Message::FollowArtistToggle(aid, true),
-            ));
+            match currently_followed {
+                Some(true) => {
+                    menu_col = menu_col.push(menu_item_button(
+                        Icon::Heart,
+                        format!("Dejar de seguir a {aname}"),
+                        Message::FollowArtistToggle(aid, true),
+                    ));
+                }
+                Some(false) => {
+                    menu_col = menu_col.push(menu_item_button(
+                        Icon::Heart,
+                        format!("Seguir a {aname}"),
+                        Message::FollowArtistToggle(aid, false),
+                    ));
+                }
+                None => {
+                    menu_col = menu_col.push(menu_item_button_disabled("Cargando..."));
+                }
+            }
         }
     }
 
@@ -229,6 +254,29 @@ fn menu_item_button<'a>(
             }
             _ => base,
         }
+    })
+    .into()
+}
+
+fn menu_item_button_disabled<'a>(label: impl Into<String>) -> Element<'a, Message> {
+    let label_str = label.into();
+    Button::new(
+        Row::new()
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(Icon::Clock.view_colored(16.0, theme::TEXT_TERTIARY))
+            .push(
+                Text::new(label_str)
+                    .size(13)
+                    .color(theme::TEXT_TERTIARY)
+                    .width(Length::Fill),
+            ),
+    )
+    .padding([8, 12])
+    .width(Length::Fill)
+    .style(|_t, _s| iced::widget::button::Style {
+        background: Some(Background::Color(Color::TRANSPARENT)),
+        ..Default::default()
     })
     .into()
 }

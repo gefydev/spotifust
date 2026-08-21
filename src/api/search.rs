@@ -13,6 +13,8 @@ pub struct SearchResultTrack {
     pub duration_ms: u32,
     pub uri: String,
     pub image_url: Option<String>,
+    pub album_id: Option<String>,
+    pub artist_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,12 +64,22 @@ pub async fn execute_search(
                     .collect::<Vec<_>>()
                     .join(", ");
 
-                let image_url = track.album.images.first().map(|img| img.url.clone());
+                let image_url = crate::api::pick_thumb_image(&track.album.images);
                 let track_id = track
                     .id
                     .as_ref()
                     .map_or_else(String::new, ToString::to_string);
                 let uri = track.id.as_ref().map_or_else(String::new, Id::uri);
+                let album_id = track
+                    .album
+                    .id
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string);
+                let artist_id = track
+                    .artists
+                    .first()
+                    .and_then(|a| a.id.as_ref())
+                    .map_or_else(String::new, ToString::to_string);
 
                 search_results.tracks.push(SearchResultTrack {
                     id: track_id,
@@ -77,6 +89,8 @@ pub async fn execute_search(
                     duration_ms: u32::try_from(track.duration.num_milliseconds()).unwrap_or(0),
                     uri,
                     image_url,
+                    album_id: (!album_id.is_empty()).then_some(album_id),
+                    artist_id: (!artist_id.is_empty()).then_some(artist_id),
                 });
             }
         }
@@ -119,6 +133,41 @@ pub async fn execute_search(
         }
 
         Ok(search_results)
+    })
+    .await
+}
+
+/// Resolves an artist's Spotify ID from its display name via `/v1/search`.
+/// Used by "Go to artist" when only the name is known (e.g., from a track).
+#[allow(clippy::missing_errors_doc)]
+pub async fn find_artist_by_name(
+    spotify: &AuthCodePkceSpotify,
+    artist_name: &str,
+) -> Result<Option<String>, AppError> {
+    if artist_name.trim().is_empty() {
+        return Ok(None);
+    }
+
+    with_auto_reauth(spotify, || async {
+        if let Ok(SearchResult::Artists(artists_page)) = spotify
+            .search(
+                artist_name,
+                SearchType::Artist,
+                None,
+                None,
+                Some(5),
+                Some(0),
+            )
+            .await
+        {
+            Ok(artists_page
+                .items
+                .into_iter()
+                .next()
+                .map(|artist| artist.id.to_string()))
+        } else {
+            Ok(None)
+        }
     })
     .await
 }

@@ -108,6 +108,8 @@ pub struct PlaylistTrack {
     pub is_local: bool,
     pub is_local_available: bool,
     pub local_path: Option<std::path::PathBuf>,
+    pub album_id: Option<String>,
+    pub artist_id: Option<String>,
 }
 
 /// Fetches track listings on demand for a specific playlist ID.
@@ -147,13 +149,23 @@ pub async fn fetch_playlist_tracks(
                         .collect::<Vec<_>>()
                         .join(", ");
 
-                    let image_url = full_track.album.images.first().map(|img| img.url.clone());
+                    let image_url = crate::api::pick_thumb_image(&full_track.album.images);
                     let track_id = full_track
                         .id
                         .as_ref()
                         .map_or_else(String::new, ToString::to_string);
                     let uri = full_track.id.as_ref().map_or_else(String::new, Id::uri);
                     let is_local = full_track.is_local || uri.starts_with("spotify:local:");
+                    let album_id = full_track
+                        .album
+                        .id
+                        .as_ref()
+                        .map_or_else(String::new, ToString::to_string);
+                    let artist_id = full_track
+                        .artists
+                        .first()
+                        .and_then(|a| a.id.as_ref())
+                        .map_or_else(String::new, ToString::to_string);
 
                     tracks.push(PlaylistTrack {
                         id: track_id,
@@ -167,6 +179,8 @@ pub async fn fetch_playlist_tracks(
                         is_local,
                         is_local_available: !is_local,
                         local_path: None,
+                        album_id: (!album_id.is_empty()).then_some(album_id),
+                        artist_id: (!artist_id.is_empty()).then_some(artist_id),
                     });
                 }
             }
@@ -335,6 +349,8 @@ mod tests {
             is_local: false,
             is_local_available: true,
             local_path: None,
+            album_id: None,
+            artist_id: None,
         };
         assert_eq!(t.title, "Resonance");
         assert_eq!(t.duration_ms, 212_000);

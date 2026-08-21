@@ -11,6 +11,8 @@ pub struct ArtistTopTrack {
     pub album: String,
     pub duration_ms: u32,
     pub uri: String,
+    pub album_id: Option<String>,
+    pub image_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +58,11 @@ pub async fn fetch_artist_details(
         for t in top_tracks_raw {
             let track_id = t.id.as_ref().map_or_else(String::new, ToString::to_string);
             let uri = t.id.as_ref().map_or_else(String::new, Id::uri);
+            let album_id = t
+                .album
+                .id
+                .as_ref()
+                .map_or_else(String::new, ToString::to_string);
 
             top_tracks.push(ArtistTopTrack {
                 id: track_id,
@@ -63,6 +70,8 @@ pub async fn fetch_artist_details(
                 album: t.album.name,
                 duration_ms: u32::try_from(t.duration.num_milliseconds()).unwrap_or(0),
                 uri,
+                album_id: (!album_id.is_empty()).then_some(album_id),
+                image_url: crate::api::pick_thumb_image(&t.album.images),
             });
         }
 
@@ -99,6 +108,46 @@ pub async fn fetch_artist_details(
         })
     })
     .await
+}
+
+/// Checks whether the authenticated user follows a given artist (`/v1/me/following/contains`).
+#[allow(clippy::missing_errors_doc)]
+pub async fn fetch_artist_follow_state(
+    spotify: &AuthCodePkceSpotify,
+    artist_id: &str,
+) -> Result<bool, AppError> {
+    let token_mutex = spotify.get_token();
+    let token_guard = token_mutex
+        .lock()
+        .await
+        .map_err(|e| AppError::Auth(format!("Failed to lock token mutex: {e:?}")))?;
+    let access_token = token_guard
+        .as_ref()
+        .map(|t| t.access_token.clone())
+        .ok_or_else(|| AppError::Auth("No access token available".to_string()))?;
+    drop(token_guard);
+
+    let url =
+        format!("https://api.spotify.com/v1/me/following/contains?type=artist&ids={artist_id}");
+    let res = reqwest::Client::new()
+        .get(url)
+        .bearer_auth(&access_token)
+        .send()
+        .await
+        .map_err(|e| AppError::Network(format!("Failed to check artist follow state: {e}")))?;
+
+    if !res.status().is_success() {
+        return Err(AppError::Network(format!(
+            "Failed to check artist follow state (HTTP {})",
+            res.status()
+        )));
+    }
+
+    let follows: Vec<bool> = res
+        .json()
+        .await
+        .map_err(|e| AppError::Network(format!("Failed to parse follow state: {e}")))?;
+    Ok(follows.first().copied().unwrap_or(false))
 }
 
 /// Follows an artist for the authenticated user.
@@ -160,6 +209,8 @@ mod tests {
                 album: "GUNSHIP".to_string(),
                 duration_ms: 297_000,
                 uri: "spotify:track:t_10".to_string(),
+                album_id: None,
+                image_url: None,
             }],
             albums: vec![ArtistAlbum {
                 id: "alb_10".to_string(),

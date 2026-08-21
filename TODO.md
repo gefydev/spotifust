@@ -58,7 +58,7 @@
 - [x] Fetch the user's top tracks and expose them in a Home/For You view
 - [x] Implement search: send queries to `/search` and display track, album, and artist results
 - [x] Implement album detail view: fetch `/albums/{id}` and list its tracks
-- [x] Implement artist detail view: fetch `/artists/{id}` with top tracks and discography
+- [ ] Implement artist detail view: fetch `/artists/{id}` with top tracks and discography (the API exists in `src/api/artist.rs` but no UI ever calls it — see Phase 10 item 3)
 - [x] Fetch currently playing track via `/me/player/currently-playing` on startup and sync UI state
 - [x] Implement album art fetching: download cover images asynchronously and cache to disk in `src/api/cache.rs`
 - [x] Implement a metadata cache layer in `src/api/cache.rs` to avoid redundant API calls (TTL-based)
@@ -107,7 +107,7 @@
 - [x] Implement Spotify-style structured User Queue, Context Queue, and playback History stack
 - [x] Eliminate progress bar jumps and sync position directly with audio stream
 - [ ] Spotify Connect: Full bi-directional Spotify Connect integration for remote control and device sync
-- [x] Crossfade: Smooth audio crossfade between tracks (configurable duration in Settings)
+- [ ] Crossfade: Smooth audio crossfade between tracks (configurable duration in Settings) (not actually implemented — only a no-op legacy stub remains — see Phase 10 item 10)
 - [ ] Implement multi-band DSP Audio Equalizer with presets (Flat, Bass Boost, Vocal, Rock, Pop) integrated into `rodio` audio pipeline
 - [ ] Implement Audio Loudness Normalization (ReplayGain / Spotify Normalization)
 - [ ] Implement Gapless Playback transition between tracks
@@ -115,15 +115,15 @@
 ### Phase 7: System Integration & Local Files
 
 - [x] Add application window and taskbar/dock icon support for Windows, macOS, and Linux distros
-- [x] Add 100% functional native System Tray (Systray) icon for Linux, macOS, and Windows with minimize-to-tray and playback menu (Play/Pause, Skip, Show/Hide, Quit)
-- [x] Register global media key bindings (MPRIS on Linux, MediaSession on Windows/macOS)
-- [x] Implement MPRIS2 D-Bus interface on Linux for desktop environment integration
+- [ ] Add 100% functional native System Tray (Systray) icon for Linux, macOS, and Windows with minimize-to-tray and playback menu (Play/Pause, Skip, Show/Hide, Quit) (`SystemTrayManager` in `src/ui/systray.rs` is a stub never used by the app — see Phase 10 item 8 & Blocked)
+- [ ] Register global media key bindings (MPRIS on Linux, MediaSession on Windows/macOS) (no implementation exists — see Phase 10 item 9 & Blocked)
+- [ ] Implement MPRIS2 D-Bus interface on Linux for desktop environment integration (zero D-Bus code exists in the tree — see Phase 10 item 9 & Blocked)
 - [x] Local Files: Implement local audio file scanner and playback for custom local music directory path
 - [ ] Implement Drag-and-Drop: drop tracks onto left sidebar playlists to append items
 - [ ] Package the binary as a `.deb` and `.rpm` for Linux
 - [x] Package the binary as a `.dmg` / `.app` bundle for macOS
 - [x] Package the binary as an `.msi` installer for Windows
-- [x] Integrate auto-update check: compare current version against GitHub Releases on startup
+- [ ] Integrate auto-update check: compare current version against GitHub Releases on startup (`check_for_updates()` exists but is never invoked and targets the wrong repo owner — see Phase 10 item 7)
 - [ ] Write end-to-end integration tests for the auth flow and audio pipeline
 
 ### Phase 8: Performance & Speed Optimization
@@ -149,3 +149,74 @@
 - [ ] SECTION 6 - Privacy & Profile: Private Session toggle (6h auto-off), recent activity visibility dropdown, connected apps link, and profile element toggles (recent artists, followers, default public playlists)
 - [ ] SECTION 7 - Playback & DSP Equalizer: Crossfade slider (0-12s), Automix toggle, Smart Shuffle switch, Mono Audio downmix toggle, Volume Normalization & Loudness level (Normal/Loud/Quiet), interactive 6-band DSP Equalizer (60Hz, 150Hz, 400Hz, 1kHz, 2.4kHz, 15kHz with -12dB to +12dB sliders & presets), and audio output device selector dropdown bound to rodio output enumeration
 - [ ] SECTION 8 - System, Storage & Hardware: Auto-start on system boot dropdown, Close button minimizes to system tray toggle, Storage usage indicator (Downloads vs Cache MB), Clear Cache button (`src/api/cache.rs`), Offline storage path relocation picker, Proxy configuration selector (Auto-detect, HTTP, SOCKS5), and Hardware Acceleration switch
+
+### Phase 10: Correctness & Bug Fixes (deep audit of current codebase)
+
+- [x] 1. Fix context-menu positioning: every `Open*ContextMenu` message is emitted with hardcoded coordinates (`iced::Point::new(450.0, 300.0)` and similar) instead of the real cursor position — capture the actual position from `iced::Event::Mouse(CursorMoved)`
+- [x] 2. Fix "Ir al álbum" track context action: it sends `SelectAlbum(album_name)`, passing an album *name* where an album *ID* is expected (and only looks it up in saved albums) — thread the real `album_id` through `TrackInfo`/context payloads so navigation works from any source
+- [x] 3. Wire the artist detail view: `fetch_artist_details()` in `src/api/artist.rs` (top tracks + discography + genres + followers) is never called — make "Ir al artista" open a real Artist page instead of triggering a text search, and render the fetched data
+- [x] 4. Wire the dead `OpenArtistContextMenu` message: no UI element emits it, so the artist context menu (follow/unfollow) is unreachable — hook it to artist cards in search results and album/playlist headers, and fetch real follow state (`/v1/me/following/contains`) so only the relevant action is shown instead of both
+- [x] 5. Fix "Agregar canciones del álbum a playlist": the album context menu passes an album ID as if it were a track URI (`OpenAddToPlaylistModal(vec![album_id])`) — expand the album into track URIs before opening the modal
+- [ ] 6. Remove the 200-track hard cap in `fetch_playlist_tracks` and render long playlists incrementally (chunked append or virtualized rows) so big playlists aren't silently truncated and don't lag the UI
+- [ ] 7. Fix auto-update: invoke `check_for_updates()` at startup (it is never called) and correct the GitHub URL from `elgena/spotifust` to `GenaDeev/spotifust`; surface the result as a toast/banner with a download link
+- [ ] 8. Implement the real system tray (see Blocked — needs `tray-icon`): current `SystemTrayManager` is a stub with no tray icon, minimize-to-tray, or playback menu, and is not referenced by `app.rs`
+- [ ] 9. Implement MPRIS2 D-Bus + global media keys (see Blocked — needs `zbus` as a direct dependency): no D-Bus/media-key code exists today
+- [ ] 10. Implement real crossfade: the only remnant is a no-op `AudioCommand::SetCrossfade` in the legacy engine — implement overlap/fade between tracks in the rodio pipeline (rodio already supports `fade_in`/`fade_out`)
+- [x] 11. Remove the legacy mock sine-wave `AudioEngine` (`src/audio/engine.rs`): it spawns threads before login, is Phase-3 scaffolding, and is still used as a playback fallback in `TogglePlayback` when no audio session exists — also delete the dead `PlayerCommand::SkipNext/SkipPrev` variants in `session.rs` that just reload the same URI
+- [ ] 12. Replace hardcoded user paths: `get_user_music_dir()` falls back to `/home/elgena/Música` and the Settings page shows a static `/home/elgena/Music` — use XDG dirs / `$XDG_MUSIC_DIR` or a persisted setting
+- [ ] 13. Fix cache semantics: `DiskMetadataCache` never expires (deleted playlists/albums resurrect from disk) and `ImageCache` never evicts (unbounded disk growth) — add TTL/versioning to metadata and LRU eviction (count + bytes) to images
+- [ ] 14. Move the image/metadata cache out of `std::env::temp_dir()` (wiped on reboot, per-user pollution) into a proper app-data dir (`~/.local/share/spotifust`, `%APPDATA%`, etc.) so the "instant startup render" cache actually survives
+- [x] 15. Debounce the search input (~300 ms): today every keystroke fires `/v1/search`, risking 429 rate limits and wasted requests
+- [ ] 16. Fix the local-track pipeline: duration is hardcoded to 180 s, cover art is found by byte-magic scanning, and playback sends an empty URI (`Play("")` → "Cannot play track with empty Spotify URI") — parse real metadata (symphonia is already in the tree via librespot) and wire a working local playback path that uses `local_path`
+- [ ] 17. Wire the playback-bar heart button (currently `Message::MockAction`) to save/unsave the current track via `/v1/me/tracks` (Liked Songs parity), and use the existing `Icon::VolumeMute` for the mute button instead of `Icon::X`
+- [ ] 18. Fix `TogglePlaylistPrivacy`: it always assumes `currently_public = true` without knowing the real state — fetch the playlist's current visibility before toggling
+- [ ] 19. Give `NavigationItem::Library` a real view (today it renders the same Home dashboard): aggregate playlists, saved albums, and followed artists with search/filter, like Spotify's "Your Library"
+- [ ] 20. Unify playback-position sources: the UI ticks every 200 ms (`PlaybackTick`) while the session pushes `PositionMs` every 500 ms — pick one source of truth to avoid progress drift
+- [ ] 21. Fix the bitrate mismatch: `session.rs` hardcodes `Bitrate160` while README/TODO/Settings all claim "320 kbps (Very High)" — restore `Bitrate320` or wire the Phase 9 §3 bitrate selector immediately
+- [ ] 22. Memoize the local-file scan: `match_and_persist_local_tracks` re-scans the whole music directory on every playlist load — cache the scan results with invalidation on folder change
+- [ ] 23. Search parity: include playlists in `/v1/search` results and mark explicit tracks with the Ⓔ badge (feeds the Phase 9 §2 explicit-content filter)
+- [x] 24. Playback immediacy: clear the stale rodio buffer on new track load so a freshly-selected track starts instantly instead of playing leftover buffered audio first
+- [x] 25. Perf/RAM: use 300px thumbnails for track-level artwork (was always the 640px image) and bound concurrent image downloads to 6 via a shared semaphore — kills the startup download storm and cuts decoded-image RAM several-fold
+
+### Phase 11: Spotify Parity Features (things the original client has that Spotifust doesn't)
+
+- [ ] 1. Liked Songs: dedicated "Liked Songs" entry in the sidebar backed by `/v1/me/tracks`, working heart save/unsave, and an "Add to Liked Songs" context action
+- [ ] 2. Recently Played shelf on Home (`/v1/me/player/recently-played`) — Spotify's "Recently played" row
+- [ ] 3. "Play next" context action (insert at the top of the user queue) alongside "Add to queue"
+- [ ] 4. Sleep timer (stop playback after N minutes or at end of current track) in the Queue panel — Spotify desktop has it under Queue → Sleep timer
+- [x] 5. Log out / switch account: the avatar button is a `MockAction`; add a profile menu with Log out (clears the keyring token), Account link (`spotify.com/account`), and account switching — the app currently has no way to sign out (logout + session cleanup + round avatar popup done; account link & switching remain, see item 17)
+- [ ] 6. Render the playback History stack in the Queue panel — `history` exists in the Model but is never displayed (Spotify shows "History" in the queue)
+- [ ] 7. Radio: "Start radio" from track/artist/album context menus seeding `/v1/recommendations` (seed genres/artists/tracks) — the recommendations API exists but there is no radio entry point
+- [ ] 8. Create playlist (+ folder support) from the top-bar "+" button (currently `MockAction`) with name/description modal, wired to `POST /v1/users/{id}/playlists`
+- [ ] 9. Fullscreen Now Playing / immersive mode with large animated cover art and progress — complements the existing mini-player
+- [ ] 10. Album header richness: copyright, label, release year, and total duration in the album detail view (Spotify shows all of these)
+- [ ] 11. Ctrl+K / "/" to focus search from anywhere, plus extended shortcuts (e.g., Ctrl+→ seek +10 s, Ctrl+← seek −10 s)
+- [ ] 12. "Hide this song" / "Don't recommend this song" dislike actions (Spotify's taste-exclusion) via context menu
+- [ ] 13. Offline downloads: cache tracks for offline playback with storage management (see Blocked — disk usage + ToS decision)
+- [ ] 14. "Made for You" Daily Mix cluster on Home — featured playlists are fetched; surface the Daily Mix family explicitly
+- [ ] 15. Share popover: copy link + "Open in browser" + OS share sheet (copy-link exists today, browser open does not)
+- [ ] 16. Playlist sort controls (custom / recently added / artist / title) and in-playlist search, like Spotify's playlist header
+- [ ] 17. Account menu extras: "Account" link to `spotify.com/account` and account switching (log out already works — Phase 11 item 5)
+
+## Architectural Debt
+
+- [ ] `OpenArtistContextMenu` was dead but is now wired (artist cards in search + artist page); remaining dead code: `SystemTrayManager` unused stub, `NavigationItem::Library` and `RightPanelTab::Lyrics` render placeholders only
+- [ ] `Message::MockAction` button stubs: top-bar "+", playback-bar heart, queue "now playing" row — all do nothing (avatar now opens the account menu)
+- [ ] Settings page is fully static mock UI (badges "320 kbps (Very High)" / "Enabled", static `/home/elgena/Music` path, "Spotify Connect: Enabled") — nothing on it is functional; every toggle must be wired when Phase 9 lands
+- [ ] `DiskMetadataCache` never expires (stale playlists/albums resurrect from disk); `ImageCache` never evicts and lives in `std::env::temp_dir()`
+- [ ] `get_user_music_dir()` hardcodes `/home/elgena/Música` as fallback; local scan re-runs on every playlist load with no memoization
+- [ ] `fetch_playlist_tracks` caps at 200 tracks; `fetch_featured_playlists`/`fetch_new_releases` cap at 10
+- [ ] Playback position driven from two sources (UI 200 ms tick + session 500 ms `PositionMs`) — drift risk
+- [ ] Search fires a request per keystroke with no debounce
+- [ ] Updater URL targets the wrong repo owner and `check_for_updates()` is never invoked
+- [ ] Hardcoded context-menu coordinates everywhere instead of cursor position
+- [ ] `session.rs` bitrate hardcoded to 160 kbps while README/Settings/TODO claim 320 kbps
+
+## Blocked / Needs Human Decision
+
+- [ ] Real system tray requires a new dependency (`tray-icon` or `ksni`/`tray-item`) — not in the Tech Stack table (AGENTS.md §6: no new deps without human decision)
+- [ ] MPRIS2 D-Bus + global media keys require `zbus` as a direct dependency (currently only transitive) — §6 decision
+- [ ] Local-file metadata parsing wants `lofty` (or direct `symphonia`, already transitive) — §6 decision
+- [ ] Offline downloads: disk usage policy, cache lifecycle, and Spotify ToS implications — needs human decision
+- [ ] Track-change desktop notifications need `notify-rust` — optional, §6 decision
+- [ ] (Anything that isn't safe for the agent to decide unilaterally — see §6)

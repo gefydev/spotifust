@@ -1,4 +1,3 @@
-use crate::audio::engine::{AudioCommand, AudioEngine};
 use crate::audio::session::{AudioSession, AudioSessionEvent, PlayerCommand};
 use crate::error::AppError;
 use crate::ui::login;
@@ -47,6 +46,19 @@ pub struct SelectedAlbumState {
     pub is_loading: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct SelectedArtistState {
+    pub id: String,
+    pub name: String,
+    pub image_url: Option<String>,
+    pub followers: u32,
+    pub genres: Vec<String>,
+    pub top_tracks: Vec<crate::api::artist::ArtistTopTrack>,
+    pub albums: Vec<crate::api::artist::ArtistAlbum>,
+    pub is_loading: bool,
+    pub is_followed: Option<bool>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TrackInfo {
     pub title: String,
@@ -56,6 +68,10 @@ pub struct TrackInfo {
     pub duration_ms: u32,
     pub image_url: Option<String>,
     pub uri: String,
+    #[serde(default)]
+    pub album_id: Option<String>,
+    #[serde(default)]
+    pub artist_id: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -157,6 +173,7 @@ pub enum ContextMenuTarget {
     Artist {
         artist_id: String,
         artist_name: String,
+        currently_followed: Option<bool>,
     },
     Playlist(crate::api::playlist::PlaylistSummary),
 }
@@ -211,6 +228,7 @@ pub enum AppState {
         sidebar_filter: SidebarFilter,
         selected_playlist: Option<SelectedPlaylistState>,
         selected_album: Option<SelectedAlbumState>,
+        selected_artist: Option<SelectedArtistState>,
         user_queue: Vec<TrackInfo>,
         context_queue: Vec<TrackInfo>,
         original_context_queue: Vec<TrackInfo>,
@@ -227,13 +245,14 @@ pub enum AppState {
         dragging_sidebar: bool,
         dragging_right_panel: bool,
         window_width: f32,
+        cursor_position: iced::Point,
+        search_seq: u64,
+        account_menu_open: bool,
     },
 }
 
 pub struct App {
     pub state: AppState,
-    #[allow(dead_code)]
-    pub audio_tx: tokio::sync::mpsc::Sender<AudioCommand>,
     pub active_error: Option<String>,
 }
 
@@ -256,6 +275,7 @@ pub enum Message {
     NewReleasesFetched(Result<Vec<crate::api::album::AlbumSummary>, AppError>),
     CurrentlyPlayingFetched(Result<Option<crate::api::tracks::CurrentlyPlayingInfo>, AppError>),
     SearchInputChanged(String),
+    SearchDebounced(u64),
     SearchResultsFetched(Result<crate::api::search::SearchResults, AppError>),
     SelectPlaylist(String),
     PlaylistTracksFetched(
@@ -264,6 +284,9 @@ pub enum Message {
     ),
     SelectAlbum(String),
     SelectArtist(String),
+    SelectArtistByName(String),
+    ArtistDetailsFetched(String, Result<crate::api::artist::ArtistDetail, AppError>),
+    ArtistFollowStateFetched(String, Result<bool, AppError>),
     AlbumDetailsFetched(String, Result<crate::api::album::AlbumDetail, AppError>),
     PlayTrack(String),
     SidebarFilterSelected(SidebarFilter),
@@ -295,6 +318,8 @@ pub enum Message {
         position: iced::Point,
     },
     CloseContextMenu,
+    OpenAddAlbumToPlaylistModal(String),
+    AlbumTracksReadyForPlaylist(Result<Vec<String>, AppError>),
     CopyShareLink(String, String),
     OpenAddToPlaylistModal(Vec<String>),
     OpenEditPlaylistModal(String, String, String),
@@ -335,13 +360,18 @@ pub enum Message {
     ClearQueue,
     // Mock UI Actions
     MockAction,
+    // Account Menu & Session
+    ToggleAccountMenu,
+    CloseAccountMenu,
+    LogoutRequested,
+    LogoutFinished(Result<(), AppError>),
     // Error Actions
     DismissError,
     // Panel Layout Messages
     StartSidebarDrag,
     StartRightPanelDrag,
     EndPanelDrag,
-    PanelDragMoved(f32),
+    CursorMoved(iced::Point),
     ToggleRightPanel(RightPanelTab),
     WindowResized(f32),
 }
@@ -390,15 +420,12 @@ impl iced::advanced::subscription::Recipe for PlayerEventsRecipe {
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
-        let audio_tx = AudioEngine::spawn();
-
         (
             Self {
                 state: AppState::Login {
                     is_loading: true,
                     error: None,
                 },
-                audio_tx,
                 active_error: None,
             },
             Task::perform(
@@ -437,7 +464,7 @@ impl App {
                 }
                 subs.push(iced::event::listen().filter_map(|event| match event {
                     iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
-                        Some(Message::PanelDragMoved(position.x))
+                        Some(Message::CursorMoved(position))
                     }
                     iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
                         iced::mouse::Button::Left,
@@ -554,6 +581,7 @@ impl App {
                     sidebar_filter: SidebarFilter::All,
                     selected_playlist: None,
                     selected_album: None,
+                    selected_artist: None,
                     user_queue: Vec::new(),
                     context_queue: Vec::new(),
                     original_context_queue: Vec::new(),
@@ -570,6 +598,9 @@ impl App {
                     dragging_sidebar: false,
                     dragging_right_panel: false,
                     window_width: 1200.0,
+                    cursor_position: iced::Point::new(600.0, 400.0),
+                    search_seq: 0,
+                    account_menu_open: false,
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -688,10 +719,23 @@ impl App {
                         ..
                     } = &mut self.state
                     {
-                        tasks.extend(load_image_tasks(
-                            std::iter::once(profile.avatar_url.clone()),
-                            loaded_images,
-                        ));
+                        // The avatar is fetched with a circle mask applied so it renders round.
+                        if let Some(ref avatar_url) = profile.avatar_url {
+                            if !avatar_url.is_empty() && !loaded_images.contains_key(avatar_url) {
+                                let u = avatar_url.clone();
+                                tasks.push(Task::perform(
+                                    async move {
+                                        let (url, bytes) =
+                                            crate::api::cache::ImageCache::fetch_image_bytes(u)
+                                                .await?;
+                                        let masked =
+                                            mask_avatar_circle(&bytes, 32).unwrap_or(bytes);
+                                        Ok((url, masked))
+                                    },
+                                    Message::ImageLoaded,
+                                ));
+                            }
+                        }
                         *user_profile = Some(profile);
                     }
                 }
@@ -791,6 +835,8 @@ impl App {
                             duration_ms: info.duration_ms,
                             image_url: info.image_url,
                             uri: info.uri.clone(),
+                            album_id: info.album_id,
+                            artist_id: info.artist_id,
                         });
                         playback.progress_ms = info.progress_ms;
                         playback.is_playing = info.is_playing;
@@ -808,26 +854,53 @@ impl App {
                     search_query,
                     search_results,
                     is_searching,
-                    spotify_client,
                     nav_item,
+                    search_seq,
                     ..
                 } = &mut self.state
                 {
                     search_query.clone_from(&query);
                     *nav_item = NavigationItem::Search;
 
+                    // Invalidate any pending debounced search and fire a new one.
+                    *search_seq = search_seq.wrapping_add(1);
+                    let seq = *search_seq;
+
                     if query.trim().is_empty() {
                         *search_results = crate::api::search::SearchResults::default();
                         *is_searching = false;
-                    } else {
-                        *is_searching = true;
-                        if let Some(client) = spotify_client.clone() {
-                            let q = query;
-                            return Task::perform(
-                                async move { crate::api::search::execute_search(&client, &q).await },
-                                Message::SearchResultsFetched,
-                            );
-                        }
+                        return Task::none();
+                    }
+
+                    return Task::perform(
+                        async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                            seq
+                        },
+                        Message::SearchDebounced,
+                    );
+                }
+                Task::none()
+            }
+            Message::SearchDebounced(seq) => {
+                if let AppState::Main {
+                    search_query,
+                    search_seq,
+                    is_searching,
+                    spotify_client,
+                    ..
+                } = &mut self.state
+                {
+                    if *search_seq != seq || search_query.trim().is_empty() {
+                        return Task::none();
+                    }
+                    *is_searching = true;
+                    if let Some(client) = spotify_client.clone() {
+                        let q = search_query.clone();
+                        return Task::perform(
+                            async move { crate::api::search::execute_search(&client, &q).await },
+                            Message::SearchResultsFetched,
+                        );
                     }
                 }
                 Task::none()
@@ -942,6 +1015,7 @@ impl App {
                     user_albums,
                     selected_album,
                     selected_playlist,
+                    selected_artist,
                     spotify_client,
                     nav_item,
                     ..
@@ -949,6 +1023,7 @@ impl App {
                 {
                     *nav_item = NavigationItem::Home;
                     *selected_playlist = None;
+                    *selected_artist = None;
                     let (name, artist, image_url, release_date) =
                         user_albums.iter().find(|a| a.id == album_id).map_or_else(
                             || ("Album".to_string(), String::new(), None, String::new()),
@@ -986,8 +1061,147 @@ impl App {
                 }
                 Task::none()
             }
-            Message::SelectArtist(artist_name) => {
-                self.update(Message::SearchInputChanged(artist_name))
+            Message::SelectArtist(artist_id) => {
+                if let AppState::Main {
+                    selected_artist,
+                    selected_playlist,
+                    selected_album,
+                    spotify_client,
+                    nav_item,
+                    ..
+                } = &mut self.state
+                {
+                    *nav_item = NavigationItem::Home;
+                    *selected_playlist = None;
+                    *selected_album = None;
+                    *selected_artist = Some(SelectedArtistState {
+                        id: artist_id.clone(),
+                        name: String::new(),
+                        image_url: None,
+                        followers: 0,
+                        genres: Vec::new(),
+                        top_tracks: Vec::new(),
+                        albums: Vec::new(),
+                        is_loading: true,
+                        is_followed: None,
+                    });
+
+                    if let Some(client) = spotify_client.clone() {
+                        let client_details = Arc::clone(&client);
+                        let client_follow = Arc::clone(&client);
+                        let aid_details = artist_id.clone();
+                        let aid_follow = artist_id.clone();
+                        let aid_details_msg = aid_details.clone();
+                        let aid_follow_msg = aid_follow.clone();
+                        return Task::batch(vec![
+                            Task::perform(
+                                async move {
+                                    crate::api::artist::fetch_artist_details(
+                                        &client_details,
+                                        &aid_details,
+                                    )
+                                    .await
+                                },
+                                move |res| Message::ArtistDetailsFetched(aid_details_msg, res),
+                            ),
+                            Task::perform(
+                                async move {
+                                    crate::api::artist::fetch_artist_follow_state(
+                                        &client_follow,
+                                        &aid_follow,
+                                    )
+                                    .await
+                                },
+                                move |res| Message::ArtistFollowStateFetched(aid_follow_msg, res),
+                            ),
+                        ]);
+                    }
+                }
+                Task::none()
+            }
+            Message::SelectArtistByName(artist_name) => {
+                let client = if let AppState::Main { spotify_client, .. } = &self.state {
+                    spotify_client.clone()
+                } else {
+                    None
+                };
+                if let Some(client) = client {
+                    let name_for_fetch = artist_name.clone();
+                    return Task::perform(
+                        async move {
+                            crate::api::search::find_artist_by_name(&client, &name_for_fetch).await
+                        },
+                        move |res| match res {
+                            Ok(Some(artist_id)) => Message::SelectArtist(artist_id),
+                            Ok(None) => Message::ShowToast(format!(
+                                "No se encontró al artista '{artist_name}'"
+                            )),
+                            Err(e) => Message::ErrorEncountered(e),
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ArtistDetailsFetched(artist_id, res) => {
+                let mut tasks = Vec::new();
+                if let AppState::Main {
+                    selected_artist: Some(sa),
+                    loaded_images,
+                    ..
+                } = &mut self.state
+                {
+                    if sa.id == artist_id {
+                        sa.is_loading = false;
+                        if let Ok(detail) = res {
+                            sa.name = detail.name;
+                            sa.image_url.clone_from(&detail.image_url);
+                            sa.followers = detail.followers;
+                            sa.genres = detail.genres;
+                            sa.top_tracks = detail.top_tracks;
+                            sa.albums = detail.albums;
+
+                            tasks.extend(load_image_tasks(
+                                std::iter::once(sa.image_url.clone())
+                                    .chain(sa.albums.iter().map(|a| a.image_url.clone()))
+                                    .chain(sa.top_tracks.iter().map(|t| t.image_url.clone())),
+                                loaded_images,
+                            ));
+                        }
+                    }
+                }
+                if tasks.is_empty() {
+                    Task::none()
+                } else {
+                    Task::batch(tasks)
+                }
+            }
+            Message::ArtistFollowStateFetched(artist_id, res) => {
+                let followed = res.unwrap_or(false);
+                if let AppState::Main {
+                    active_context_menu,
+                    selected_artist,
+                    ..
+                } = &mut self.state
+                {
+                    if let Some(menu) = active_context_menu {
+                        if let ContextMenuTarget::Artist {
+                            artist_id: menu_aid,
+                            currently_followed,
+                            ..
+                        } = &mut menu.target
+                        {
+                            if *menu_aid == artist_id {
+                                *currently_followed = Some(followed);
+                            }
+                        }
+                    }
+                    if let Some(sa) = selected_artist {
+                        if sa.id == artist_id {
+                            sa.is_followed = Some(followed);
+                        }
+                    }
+                }
+                Task::none()
             }
             Message::AlbumDetailsFetched(album_id, res) => {
                 let mut tasks = Vec::new();
@@ -1025,6 +1239,7 @@ impl App {
                     user_top_tracks,
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     search_results,
                     loaded_images,
                     context_queue,
@@ -1055,6 +1270,8 @@ impl App {
                                 duration_ms: t.duration_ms,
                                 image_url: t.image_url.clone(),
                                 uri: t.uri.clone(),
+                                album_id: t.album_id.clone(),
+                                artist_id: t.artist_id.clone(),
                             })
                             .collect();
                         if let Some(idx) = new_ctx.iter().position(|t| t.uri == uri) {
@@ -1077,6 +1294,8 @@ impl App {
                                 duration_ms: t.duration_ms,
                                 image_url: sa.image_url.clone(),
                                 uri: t.uri.clone(),
+                                album_id: Some(sa.id.clone()),
+                                artist_id: t.artist_id.clone(),
                             })
                             .collect();
                         if let Some(idx) = new_ctx.iter().position(|t| t.uri == uri) {
@@ -1091,6 +1310,35 @@ impl App {
                     }
 
                     if found_info.is_none() {
+                        if let Some(sa) = selected_artist {
+                            let new_ctx: Vec<TrackInfo> = sa
+                                .top_tracks
+                                .iter()
+                                .map(|t| TrackInfo {
+                                    title: t.title.clone(),
+                                    artist: sa.name.clone(),
+                                    album: t.album.clone(),
+                                    duration_ms: t.duration_ms,
+                                    image_url: t.image_url.clone(),
+                                    uri: t.uri.clone(),
+                                    album_id: t.album_id.clone(),
+                                    artist_id: Some(sa.id.clone()),
+                                })
+                                .collect();
+                            if let Some(idx) = new_ctx.iter().position(|t| t.uri == uri) {
+                                *context_index = idx;
+                                found_info = Some(new_ctx[idx].clone());
+                                original_context_queue.clone_from(&new_ctx);
+                                *context_queue = new_ctx;
+                                if playback.is_shuffled && *context_index + 1 < context_queue.len()
+                                {
+                                    shuffle_slice(&mut context_queue[*context_index + 1..]);
+                                }
+                            }
+                        }
+                    }
+
+                    if found_info.is_none() {
                         if let Some(t) = user_top_tracks.iter().find(|t| t.uri == uri) {
                             found_info = Some(TrackInfo {
                                 title: t.title.clone(),
@@ -1099,6 +1347,8 @@ impl App {
                                 duration_ms: t.duration_ms,
                                 image_url: t.image_url.clone(),
                                 uri: uri.clone(),
+                                album_id: t.album_id.clone(),
+                                artist_id: t.artist_id.clone(),
                             });
                         } else if let Some(t) = search_results.tracks.iter().find(|t| t.uri == uri)
                         {
@@ -1109,6 +1359,8 @@ impl App {
                                 duration_ms: t.duration_ms,
                                 image_url: t.image_url.clone(),
                                 uri: uri.clone(),
+                                album_id: t.album_id.clone(),
+                                artist_id: t.artist_id.clone(),
                             });
                         }
                     }
@@ -1157,11 +1409,13 @@ impl App {
                 if let AppState::Main {
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     ..
                 } = &mut self.state
                 {
                     *selected_playlist = None;
                     *selected_album = None;
+                    *selected_artist = None;
                 }
                 Task::none()
             }
@@ -1275,6 +1529,8 @@ impl App {
                                 duration_ms: audio_item.duration_ms,
                                 image_url,
                                 uri: playback.current_track_uri.clone().unwrap_or_default(),
+                                album_id: None,
+                                artist_id: None,
                             });
                         }
                         if !tasks.is_empty() {
@@ -1348,6 +1604,7 @@ impl App {
                     nav_item,
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     ..
                 } = &mut self.state
                 {
@@ -1355,6 +1612,7 @@ impl App {
                     if item == NavigationItem::Home {
                         *selected_playlist = None;
                         *selected_album = None;
+                        *selected_artist = None;
                     }
                 }
                 Task::none()
@@ -1366,6 +1624,12 @@ impl App {
                     ..
                 } = &mut self.state
                 {
+                    // Without an audio session (pre-login or session expired) there is
+                    // nothing to toggle — don't flip the UI flag and pretend audio plays.
+                    if audio_session.is_none() {
+                        return Task::none();
+                    }
+
                     let was_playing = playback.is_playing;
                     playback.is_playing = !was_playing;
 
@@ -1376,13 +1640,6 @@ impl App {
                             PlayerCommand::Resume
                         };
                         let _ = session.cmd_tx.try_send(cmd);
-                    } else {
-                        let legacy_cmd = if playback.is_playing {
-                            AudioCommand::Play
-                        } else {
-                            AudioCommand::Pause
-                        };
-                        let _ = self.audio_tx.try_send(legacy_cmd);
                     }
                 }
                 Task::none()
@@ -1646,6 +1903,12 @@ impl App {
                 artist_name,
                 position,
             } => {
+                let client = if let AppState::Main { spotify_client, .. } = &self.state {
+                    spotify_client.clone()
+                } else {
+                    None
+                };
+
                 if let AppState::Main {
                     active_context_menu,
                     ..
@@ -1653,14 +1916,67 @@ impl App {
                 {
                     *active_context_menu = Some(ContextMenuState {
                         target: ContextMenuTarget::Artist {
-                            artist_id,
+                            artist_id: artist_id.clone(),
                             artist_name,
+                            currently_followed: None,
                         },
                         position,
                     });
                 }
+
+                if let Some(client) = client {
+                    let aid_msg = artist_id.clone();
+                    return Task::perform(
+                        async move {
+                            crate::api::artist::fetch_artist_follow_state(&client, &artist_id).await
+                        },
+                        move |res| Message::ArtistFollowStateFetched(aid_msg, res),
+                    );
+                }
                 Task::none()
             }
+            Message::OpenAddAlbumToPlaylistModal(album_id) => {
+                let client = if let AppState::Main { spotify_client, .. } = &self.state {
+                    spotify_client.clone()
+                } else {
+                    None
+                };
+
+                if let AppState::Main {
+                    active_context_menu,
+                    ..
+                } = &mut self.state
+                {
+                    *active_context_menu = None;
+                }
+
+                if let Some(client) = client {
+                    return Task::perform(
+                        async move {
+                            let detail =
+                                crate::api::album::fetch_album_details(&client, &album_id).await?;
+                            Ok(detail.tracks.into_iter().map(|t| t.uri).collect::<Vec<_>>())
+                        },
+                        Message::AlbumTracksReadyForPlaylist,
+                    );
+                }
+                Task::none()
+            }
+            Message::AlbumTracksReadyForPlaylist(res) => match res {
+                Ok(uris) if !uris.is_empty() => {
+                    if let AppState::Main { active_modal, .. } = &mut self.state {
+                        *active_modal = Some(ActiveModal::AddToPlaylist {
+                            track_uris: uris,
+                            search_query: String::new(),
+                        });
+                    }
+                    Task::none()
+                }
+                Ok(_) => self.update(Message::ShowToast(
+                    "El álbum no tiene canciones para agregar".to_string(),
+                )),
+                Err(e) => self.update(Message::ShowToast(format!("Error: {e}"))),
+            },
             Message::CloseContextMenu => {
                 if let AppState::Main {
                     active_context_menu,
@@ -2036,10 +2352,17 @@ impl App {
 
                 if let AppState::Main {
                     active_context_menu,
+                    selected_artist,
                     ..
                 } = &mut self.state
                 {
                     *active_context_menu = None;
+                    // Optimistic update for the artist page follow button.
+                    if let Some(sa) = selected_artist {
+                        if sa.id == artist_id {
+                            sa.is_followed = Some(!currently_followed);
+                        }
+                    }
                 }
 
                 if let Some(spotify) = client {
@@ -2282,8 +2605,9 @@ impl App {
                 }
                 Task::none()
             }
-            Message::PanelDragMoved(x) => {
+            Message::CursorMoved(pos) => {
                 if let AppState::Main {
+                    cursor_position,
                     dragging_sidebar,
                     dragging_right_panel,
                     sidebar_width,
@@ -2292,12 +2616,13 @@ impl App {
                     ..
                 } = &mut self.state
                 {
+                    *cursor_position = pos;
                     if *dragging_sidebar {
-                        let new_w = x.clamp(80.0, 400.0);
+                        let new_w = pos.x.clamp(80.0, 400.0);
                         *sidebar_width = if new_w < 120.0 { 80.0 } else { new_w };
                     }
                     if *dragging_right_panel {
-                        let new_w = (*window_width - x).clamp(200.0, 500.0);
+                        let new_w = (*window_width - pos.x).clamp(200.0, 500.0);
                         *right_panel_width = new_w;
                     }
                 }
@@ -2319,6 +2644,49 @@ impl App {
             Message::WindowResized(w) => {
                 if let AppState::Main { window_width, .. } = &mut self.state {
                     *window_width = w;
+                }
+                Task::none()
+            }
+            Message::ToggleAccountMenu => {
+                if let AppState::Main {
+                    account_menu_open, ..
+                } = &mut self.state
+                {
+                    *account_menu_open = !*account_menu_open;
+                }
+                Task::none()
+            }
+            Message::CloseAccountMenu => {
+                if let AppState::Main {
+                    account_menu_open, ..
+                } = &mut self.state
+                {
+                    *account_menu_open = false;
+                }
+                Task::none()
+            }
+            Message::LogoutRequested => {
+                if let AppState::Main {
+                    account_menu_open, ..
+                } = &mut self.state
+                {
+                    *account_menu_open = false;
+                }
+                Task::perform(async { clear_session_data() }, Message::LogoutFinished)
+            }
+            Message::LogoutFinished(res) => {
+                match res {
+                    Ok(()) => {
+                        // Wipe the whole UI state: the audio session (and its librespot
+                        // connection) is dropped, cached data is cleared, back to login.
+                        self.state = AppState::Login {
+                            is_loading: false,
+                            error: None,
+                        };
+                    }
+                    Err(e) => {
+                        self.active_error = Some(format!("No se pudo cerrar sesión: {e}"));
+                    }
                 }
                 Task::none()
             }
@@ -2349,11 +2717,14 @@ impl App {
                 sidebar_filter,
                 selected_playlist,
                 selected_album,
+                selected_artist,
                 user_queue,
                 context_queue,
                 context_index,
                 loaded_images,
                 window_width,
+                cursor_position,
+                account_menu_open,
                 active_context_menu,
                 active_modal,
                 toast_notification,
@@ -2376,11 +2747,14 @@ impl App {
                 *sidebar_filter,
                 selected_playlist.as_ref(),
                 selected_album.as_ref(),
+                selected_artist.as_ref(),
                 user_queue,
                 context_queue,
                 *context_index,
                 loaded_images,
                 *window_width,
+                *cursor_position,
+                *account_menu_open,
                 active_context_menu.as_ref(),
                 active_modal.as_ref(),
                 toast_notification.as_ref(),
@@ -2492,21 +2866,85 @@ pub fn load_layout() -> (f32, f32) {
     (default_sidebar, default_right)
 }
 
+/// Bounds concurrent image downloads to avoid a startup thundering-herd and
+/// a transient RAM spike when many covers resolve at once.
+static IMAGE_SEMAPHORE: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+    std::sync::OnceLock::new();
+
 fn load_image_tasks(
     urls: impl IntoIterator<Item = Option<String>>,
     loaded_images: &std::collections::HashMap<String, iced::widget::image::Handle>,
 ) -> Vec<Task<Message>> {
+    const MAX_CONCURRENT_DOWNLOADS: usize = 6;
+
     let mut tasks = Vec::new();
     for url in urls.into_iter().flatten() {
         if !url.is_empty() && !loaded_images.contains_key(&url) {
             let u = url.clone();
             tasks.push(Task::perform(
-                async move { crate::api::cache::ImageCache::fetch_image_bytes(u).await },
+                async move {
+                    let semaphore = IMAGE_SEMAPHORE.get_or_init(|| {
+                        std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_DOWNLOADS))
+                    });
+                    let _permit = semaphore.clone().acquire_owned().await;
+                    crate::api::cache::ImageCache::fetch_image_bytes(u).await
+                },
                 Message::ImageLoaded,
             ));
         }
     }
     tasks
+}
+
+#[allow(clippy::cast_possible_truncation)]
+/// Removes the OAuth refresh token (keyring) and every session-scoped cached entry,
+/// so a subsequent login starts completely clean.
+fn clear_session_data() -> Result<(), AppError> {
+    crate::api::auth::delete_refresh_token_from_keyring()?;
+    for key in [
+        "user_profile",
+        "user_playlists",
+        "user_albums",
+        "user_top_tracks",
+        "featured_playlists",
+        "featured_albums",
+        "last_playback_state",
+    ] {
+        crate::api::cache::DiskMetadataCache::remove(key);
+    }
+    Ok(())
+}
+
+/// Center-crops the given image to a square and masks it into a circle of `size`
+/// pixels, re-encoding as PNG. Falls back to the raw bytes on decode failure.
+#[allow(
+    clippy::similar_names,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+fn mask_avatar_circle(bytes: &[u8], size: u32) -> Option<Vec<u8>> {
+    use image::GenericImageView;
+
+    let source = image::load_from_memory(bytes).ok()?;
+    let (w, h) = source.dimensions();
+    let side = w.min(h);
+    let cropped = source.crop_imm((w - side) / 2, (h - side) / 2, side, side);
+    let resized = cropped.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
+    let mut rgba = resized.to_rgba8();
+
+    let center = size as f32 / 2.0;
+    let radius = center;
+    for (x, y, px) in rgba.enumerate_pixels_mut() {
+        let dx = x as f32 - center;
+        let dy = y as f32 - center;
+        if dx * dx + dy * dy > radius * radius {
+            px.0[3] = 0;
+        }
+    }
+
+    let mut out = std::io::Cursor::new(Vec::new());
+    rgba.write_to(&mut out, image::ImageFormat::Png).ok()?;
+    Some(out.into_inner())
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -2523,5 +2961,29 @@ fn shuffle_slice<T>(slice: &mut [T]) {
             .wrapping_add(1_442_695_040_888_963_407);
         let j = (state % (i as u64 + 1)) as usize;
         slice.swap(i, j);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mask_avatar_circle_makes_corners_transparent() {
+        // Build a 64x64 opaque white PNG.
+        let img = image::RgbaImage::from_pixel(64, 64, image::Rgba([255, 255, 255, 255]));
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .unwrap();
+
+        let masked = mask_avatar_circle(&buf.into_inner(), 32).expect("mask should succeed");
+        let decoded = image::load_from_memory(&masked).unwrap().to_rgba8();
+
+        // Corner pixels must be fully transparent (outside the circle).
+        assert_eq!(decoded.get_pixel(0, 0).0[3], 0);
+        assert_eq!(decoded.get_pixel(31, 0).0[3], 0);
+        // Center pixel must stay opaque.
+        assert_eq!(decoded.get_pixel(16, 16).0[3], 255);
     }
 }
