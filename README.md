@@ -17,7 +17,7 @@
 [![Repo Size](https://img.shields.io/github/repo-size/GenaDeev/spotifust?style=flat-square)](https://github.com/GenaDeev/spotifust)
 [![Issues](https://img.shields.io/github/issues/GenaDeev/spotifust?style=flat-square)](https://github.com/GenaDeev/spotifust/issues)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Lines of Code](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fspotifust.comidolar.com.ar%2Fapi%2Fbadge%2Floc.json&query=%24.message&label=Lines%20of%20Code&color=blue&style=flat-square)](https://spotifust.comidolar.com.ar)
+[![Lines of Code](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fspotifust.gefy.dev%2Fapi%2Fbadge%2Floc.json&query=%24.message&label=Lines%20of%20Code&color=blue&style=flat-square)](https://spotifust.gefy.dev)
 > ⚡ Single process • 🦀 100% Rust • 🎵 Embedded librespot • 📦 No Electron • No Chromium • No Node.js
 
 </div>

@@ -1369,11 +1369,10 @@ dependencies = [
 
 [[package]]
 name = "event-listener"
-version = "5.4.1"
+version = "5.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e13b66accf52311f30a0db42147dadea9850cb48cd070028831ae5f5d4b856ab"
+checksum = "5a23add41df1562121a9393cb065eab5146a1242410f23a644851e90cfd669d2"
 dependencies = [
- "concurrent-queue",
  "parking",
  "pin-project-lite",
 ]
@@ -1795,9 +1794,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.15"
+version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb093c84e8bd9b188d4c4a8cb6579fc016968d14c99882163cd3ff402a4f155"
+checksum = "839c0e8a181239723652be9062bb56ca5bf5f64011f73b623f6f4fc59086a228"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -2791,7 +2790,7 @@ dependencies = [
 [[package]]
 name = "librespot"
 version = "0.8.0"
-source = "git+https://github.com/librespot-org/librespot#9c7d75615fc093bdcbdb29adbce3fed38c531852"
+source = "git+https://github.com/librespot-org/librespot#d4494f565d22b3296acc9d2e845eb077fef0e71b"
 dependencies = [
  "data-encoding",
  "env_logger",
@@ -2816,7 +2815,7 @@ dependencies = [
 [[package]]
 name = "librespot-audio"
 version = "0.8.0"
-source = "git+https://github.com/librespot-org/librespot#9c7d75615fc093bdcbdb29adbce3fed38c531852"
+source = "git+https://github.com/librespot-org/librespot#d4494f565d22b3296acc9d2e845eb077fef0e71b"
 dependencies = [
  "aes",
  "bytes",
@@ -2835,7 +2834,7 @@ dependencies = [
 [[package]]
 name = "librespot-connect"
 version = "0.8.0"
-source = "git+https://github.com/librespot-org/librespot#9c7d75615fc093bdcbdb29adbce3fed38c531852"
+source = "git+https://github.com/librespot-org/librespot#d4494f565d22b3296acc9d2e845eb077fef0e71b"
 dependencies = [
  "futures-util",
  "librespot-core",
@@ -2854,7 +2853,7 @@ dependencies = [
 [[package]]
 name = "librespot-core"
 version = "0.8.0"
-source = "git+https://github.com/librespot-org/librespot#9c7d75615fc093bdcbdb29adbce3fed38c531852"
+source = "git+https://github.com/librespot-org/librespot#d4494f565d22b3296acc9d2e845eb077fef0e71b"
 dependencies = [
  "aes",
  "base64",
@@ -2911,7 +2910,7 @@ dependencies = [
 [[package]]
 name = "librespot-discovery"
 version = "0.8.0"
-source = "git+https://github.com/librespot-org/librespot#9c7d75615fc093bdcbdb29adbce3fed38c531852"
+source = "git+https://github.com/librespot-org/librespot#d4494f565d22b3296acc9d2e845eb077fef0e71b"
 dependencies = [
  "aes",
  "base64",
@@ -2938,7 +2937,7 @@ dependencies = [
 [[package]]
 name = "librespot-metadata"
 version = "0.8.0"
-source = "git+https://github.com/librespot-org/librespot#9c7d75615fc093bdcbdb29adbce3fed38c531852"
+source = "git+https://github.com/librespot-org/librespot#d4494f565d22b3296acc9d2e845eb077fef0e71b"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2955,7 +2954,7 @@ dependencies = [
 [[package]]
 name = "librespot-oauth"
 version = "0.8.0"
-source = "git+https://github.com/librespot-org/librespot#9c7d75615fc093bdcbdb29adbce3fed38c531852"
+source = "git+https://github.com/librespot-org/librespot#d4494f565d22b3296acc9d2e845eb077fef0e71b"
 dependencies = [
  "log",
  "oauth2",
@@ -2968,7 +2967,7 @@ dependencies = [
 [[package]]
 name = "librespot-playback"
 version = "0.8.0"
-source = "git+https://github.com/librespot-org/librespot#9c7d75615fc093bdcbdb29adbce3fed38c531852"
+source = "git+https://github.com/librespot-org/librespot#d4494f565d22b3296acc9d2e845eb077fef0e71b"
 dependencies = [
  "cpal",
  "form_urlencoded",
@@ -2991,7 +2990,7 @@ dependencies = [
 [[package]]
 name = "librespot-protocol"
 version = "0.8.0"
-source = "git+https://github.com/librespot-org/librespot#9c7d75615fc093bdcbdb29adbce3fed38c531852"
+source = "git+https://github.com/librespot-org/librespot#d4494f565d22b3296acc9d2e845eb077fef0e71b"
 dependencies = [
  "protobuf",
  "protobuf-codegen",
@@ -3395,9 +3394,9 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.1.0"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
+checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
 
 [[package]]
 name = "num-derive"
@@ -4305,9 +4304,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.39.4"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
 ]
@@ -5779,9 +5778,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.45"
+version = "0.3.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9e442fc33d7fdb45aa9bfeb312c095964abdf596f7567261062b2a7107aaabd"
+checksum = "743bd48c283afc0388f9b8827b976905fb217ad9e647fae3a379a9283c4def2c"
 dependencies = [
  "deranged",
  "itoa",
@@ -5796,15 +5795,15 @@ dependencies = [
 
 [[package]]
 name = "time-core"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b36ee98fd31ec7426d599183e8fe26932a8dc1fb76ddb6214d05493377d34ca"
+checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
 
 [[package]]
 name = "time-macros"
-version = "0.2.25"
+version = "0.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e552d1249bf61ac2a52db88179fd0673def1e1ad8243a00d9ec9ed71fee3dd"
+checksum = "2e70e4c5a0e0a8a4823ad65dfe1a6930e4f4d756dcd9dd7939022b5e8c501215"
 dependencies = [
  "num-conv",
  "time-core",
@@ -6539,12 +6538,12 @@ dependencies = [
 
 [[package]]
 name = "wayland-scanner"
-version = "0.31.10"
+version = "0.31.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c324a910fd86ebdc364a3e61ec1f11737d3b1d6c273c0239ee8ff4bc0d24b4a"
+checksum = "338e30461b3a2b67d70eb30a6d89f8e0c93a833e07d2ae89085cd070c4a00ac0"
 dependencies = [
  "proc-macro2",
- "quick-xml 0.39.4",
+ "quick-xml 0.41.0",
  "quote",
 ]
 
