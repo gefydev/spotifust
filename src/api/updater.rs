@@ -24,7 +24,7 @@ pub async fn check_for_updates() -> Result<UpdateInfo, AppError> {
         .build()
         .map_err(|e| AppError::Network(format!("Failed to build HTTP client for updater: {e}")))?;
 
-    let url = "https://api.github.com/repos/elgena/spotifust/releases/latest";
+    let url = "https://api.github.com/repos/gefydev/spotifust/releases/latest";
     let res = client
         .get(url)
         .send()

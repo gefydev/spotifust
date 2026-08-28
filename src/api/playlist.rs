@@ -314,7 +314,7 @@ mod tests {
         let p = PlaylistSummary {
             id: "pl_123".to_string(),
             name: "Synthwave Vibes".to_string(),
-            owner_name: "Gena".to_string(),
+            owner_name: "Spotifuster".to_string(),
             image_url: Some("https://example.com/cover.jpg".to_string()),
             total_tracks: 42,
         };

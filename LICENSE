@@ -633,7 +633,7 @@ the "copyright" line and a pointer to where the full notice is found.
 
     Spotifust — a multi-platform, ultra-lightweight Spotify client built
     entirely from scratch in Rust.
-    Copyright (C) 2026  GenaDeev
+    Copyright (C) 2026  GefyDev
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -648,7 +648,7 @@ the "copyright" line and a pointer to where the full notice is found.
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-    Contact: gena@comidolar.com.ar
+    Contact: spotifust@gefy.dev
 
   If the program does terminal interaction, make it output a short
 notice like this when it starts in an interactive mode:

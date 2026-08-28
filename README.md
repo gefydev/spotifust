@@ -6,16 +6,16 @@
 
 **A multi-platform, ultra-lightweight Spotify client built entirely from scratch in Rust.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/GenaDeev/spotifust/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/GenaDeev/spotifust/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/GenaDeev/spotifust?style=flat-square)](https://github.com/GenaDeev/spotifust/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/gefydev/spotifust/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/gefydev/spotifust/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/gefydev/spotifust?style=flat-square)](https://github.com/gefydev/spotifust/releases)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](./LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-DEA584?logo=rust&logoColor=white&style=flat-square)](https://www.rust-lang.org/)
 [![iced](https://img.shields.io/badge/GUI-iced%200.14-6574CD?logo=rust&logoColor=white&style=flat-square)](https://github.com/iced-rs/iced)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-informational?style=flat-square)
 
-[![Last Commit](https://img.shields.io/github/last-commit/GenaDeev/spotifust?style=flat-square)](https://github.com/GenaDeev/spotifust/commits/main)
-[![Repo Size](https://img.shields.io/github/repo-size/GenaDeev/spotifust?style=flat-square)](https://github.com/GenaDeev/spotifust)
-[![Issues](https://img.shields.io/github/issues/GenaDeev/spotifust?style=flat-square)](https://github.com/GenaDeev/spotifust/issues)
+[![Last Commit](https://img.shields.io/github/last-commit/gefydev/spotifust?style=flat-square)](https://github.com/gefydev/spotifust/commits/main)
+[![Repo Size](https://img.shields.io/github/repo-size/gefydev/spotifust?style=flat-square)](https://github.com/gefydev/spotifust)
+[![Issues](https://img.shields.io/github/issues/gefydev/spotifust?style=flat-square)](https://github.com/gefydev/spotifust/issues)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
 [![Lines of Code](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fspotifust.gefy.dev%2Fapi%2Fbadge%2Floc.json&query=%24.message&label=Lines%20of%20Code&color=blue&style=flat-square)](https://spotifust.gefy.dev)
 > ⚡ Single process • 🦀 100% Rust • 🎵 Embedded librespot • 📦 No Electron • No Chromium • No Node.js
@@ -140,7 +140,7 @@ spotifust/
 ### Build from source
 
 ```bash
-git clone https://github.com/GenaDeev/spotifust.git
+git clone https://github.com/gefydev/spotifust.git
 cd spotifust
 cargo build --release
 ```
@@ -171,7 +171,7 @@ export SPOTIFY_CLIENT_ID="your_client_id"
 
 ## 📦 Downloads
 
-Pre-built binaries are available on the [Releases](https://github.com/GenaDeev/spotifust/releases) page with the following naming convention:
+Pre-built binaries are available on the [Releases](https://github.com/gefydev/spotifust/releases) page with the following naming convention:
 
 | Platform | File | Architecture |
 | :--- | :--- | :--- |
@@ -233,8 +233,8 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
 ### Contributors
 
-<a href="https://github.com/GenaDeev/spotifust/graphs/contributors">
-  <img alt="Spotifust contributor panel" src="https://contrib.rocks/image?repo=GenaDeev/spotifust" />
+<a href="https://github.com/gefydev/spotifust/graphs/contributors">
+  <img alt="Spotifust contributor panel" src="https://contrib.rocks/image?repo=gefydev/spotifust" />
 </a>
 
 ---
