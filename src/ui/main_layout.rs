@@ -3098,7 +3098,7 @@ fn view_settings_page<'a>() -> Element<'a, Message> {
     }
 
     let path_box = Container::new(
-        Text::new("/home/elgena/Music")
+        Text::new("/home/user/music")
             .size(13)
             .color(theme::TEXT_PRIMARY),
     )

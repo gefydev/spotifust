@@ -84,7 +84,7 @@ pub fn get_user_music_dir() -> PathBuf {
         }
         return musica;
     }
-    PathBuf::from("/home/elgena/Música")
+    PathBuf::from("/home/user/music")
 }
 
 pub fn match_and_persist_local_tracks(tracks: &mut [crate::api::playlist::PlaylistTrack]) {
