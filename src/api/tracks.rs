@@ -120,6 +120,66 @@ pub async fn fetch_currently_playing(
     .await
 }
 
+#[allow(clippy::missing_errors_doc)]
+pub async fn fetch_recommendations(
+    spotify: &AuthCodePkceSpotify,
+    seed_track_ids: &[String],
+) -> Result<Vec<TopTrack>, AppError> {
+    use rspotify::clients::BaseClient;
+    use rspotify::model::TrackId;
+
+    let track_ids: Vec<TrackId<'_>> = seed_track_ids
+        .iter()
+        .filter_map(|id| TrackId::from_id_or_uri(id).ok())
+        .collect();
+
+    if track_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    with_auto_reauth(spotify, || async {
+        let recs = spotify
+            .recommendations(
+                std::iter::empty(),
+                None::<Vec<rspotify::model::ArtistId<'_>>>,
+                None::<Vec<&str>>,
+                Some(track_ids.clone()),
+                None,
+                Some(20),
+            )
+            .await
+            .map_err(|e| AppError::Network(format!("Failed to fetch recommendations: {e}")))?;
+
+        let mut tracks = Vec::new();
+        for track in recs.tracks {
+            let artist = track
+                .artists
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let track_id = track
+                .id
+                .as_ref()
+                .map_or_else(String::new, ToString::to_string);
+            let uri = track.id.as_ref().map_or_else(String::new, Id::uri);
+
+            tracks.push(TopTrack {
+                id: track_id,
+                title: track.name,
+                artist,
+                album: String::new(),
+                duration_ms: u32::try_from(track.duration.num_milliseconds()).unwrap_or(0),
+                uri,
+                image_url: None,
+            });
+        }
+        Ok(tracks)
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,5 +212,15 @@ mod tests {
         };
         assert_eq!(cp.title, "Nightcall");
         assert!(cp.is_playing);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_recommendations_empty_seeds() {
+        let creds = rspotify::Credentials::new("mock_client_id", "mock_client_secret");
+        let oauth = rspotify::OAuth::default();
+        let spotify = rspotify::AuthCodePkceSpotify::new(creds, oauth);
+        let res = fetch_recommendations(&spotify, &[]).await;
+        assert!(res.is_ok());
+        assert!(res.unwrap().is_empty());
     }
 }
