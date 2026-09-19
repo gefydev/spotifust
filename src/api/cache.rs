@@ -197,6 +197,98 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LruCache<K, V> {
+    entries: HashMap<K, V>,
+    order: std::collections::VecDeque<K>,
+    capacity: usize,
+}
+
+impl<K: Eq + std::hash::Hash + Clone, V> LruCache<K, V> {
+    #[must_use]
+    pub fn new(capacity: usize) -> Self {
+        let cap = capacity.max(1);
+        Self {
+            entries: HashMap::with_capacity(cap),
+            order: std::collections::VecDeque::with_capacity(cap),
+            capacity: cap,
+        }
+    }
+
+    pub fn get(&mut self, key: &K) -> Option<&V> {
+        if self.entries.contains_key(key) {
+            self.promote(key);
+            self.entries.get(key)
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub fn peek(&self, key: &K) -> Option<&V> {
+        self.entries.get(key)
+    }
+
+    #[must_use]
+    pub fn contains_key(&self, key: &K) -> bool {
+        self.entries.contains_key(key)
+    }
+
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        if self.entries.contains_key(&key) {
+            self.promote(&key);
+            self.entries.insert(key, value)
+        } else {
+            if self.entries.len() >= self.capacity {
+                if let Some(oldest) = self.order.pop_front() {
+                    self.entries.remove(&oldest);
+                }
+            }
+            self.order.push_back(key.clone());
+            self.entries.insert(key, value)
+        }
+    }
+
+    pub fn remove(&mut self, key: &K) -> Option<V> {
+        if let Some(val) = self.entries.remove(key) {
+            self.order.retain(|k| k != key);
+            Some(val)
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.order.clear();
+    }
+
+    #[must_use]
+    pub fn inner_map(&self) -> &HashMap<K, V> {
+        &self.entries
+    }
+
+    fn promote(&mut self, key: &K) {
+        self.order.retain(|k| k != key);
+        self.order.push_back(key.clone());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +350,47 @@ mod tests {
         let size = calculate_dir_size(&temp_dir);
         assert_eq!(size, 100);
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_lru_cache_bounded_capacity_and_eviction() {
+        let mut lru = LruCache::<String, i32>::new(3);
+        assert_eq!(lru.capacity(), 3);
+        assert!(lru.is_empty());
+
+        lru.insert("a".to_string(), 1);
+        lru.insert("b".to_string(), 2);
+        lru.insert("c".to_string(), 3);
+        assert_eq!(lru.len(), 3);
+
+        lru.insert("d".to_string(), 4);
+        assert_eq!(lru.len(), 3);
+        assert!(!lru.contains_key(&"a".to_string()));
+        assert!(lru.contains_key(&"b".to_string()));
+        assert!(lru.contains_key(&"c".to_string()));
+        assert!(lru.contains_key(&"d".to_string()));
+    }
+
+    #[test]
+    fn test_lru_cache_promotion_on_access() {
+        let mut lru = LruCache::<String, i32>::new(3);
+        lru.insert("a".to_string(), 1);
+        lru.insert("b".to_string(), 2);
+        lru.insert("c".to_string(), 3);
+
+        assert_eq!(lru.get(&"a".to_string()), Some(&1));
+
+        lru.insert("d".to_string(), 4);
+        assert!(lru.contains_key(&"a".to_string()));
+        assert!(!lru.contains_key(&"b".to_string()));
+        assert!(lru.contains_key(&"c".to_string()));
+        assert!(lru.contains_key(&"d".to_string()));
+
+        lru.remove(&"c".to_string());
+        assert_eq!(lru.len(), 2);
+        assert!(!lru.contains_key(&"c".to_string()));
+
+        lru.clear();
+        assert!(lru.is_empty());
     }
 }
