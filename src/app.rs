@@ -131,6 +131,22 @@ pub fn load_last_playback_state(playback: &mut PlaybackState) {
     }
 }
 
+pub fn perform_graceful_shutdown(
+    playback: &PlaybackState,
+    audio_session: Option<&AudioSession>,
+    ui_scale: f32,
+    sidebar_width: f32,
+    right_panel_width: f32,
+) {
+    save_last_playback_state(playback);
+    save_saved_volume(playback.volume);
+    save_ui_scale(ui_scale);
+    let _ = save_layout(sidebar_width, right_panel_width);
+    if let Some(session) = audio_session {
+        let _ = session.cmd_tx.try_send(PlayerCommand::Stop);
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RepeatMode {
     #[default]
@@ -400,6 +416,7 @@ pub enum Message {
     SetUiScale(f32),
     AdjustUiScale(f32),
     ResetUiScale,
+    AppCloseRequested,
 }
 
 struct PlayerEventsRecipe {
@@ -529,6 +546,9 @@ impl App {
                     )) => Some(Message::EndPanelDrag),
                     iced::Event::Window(iced::window::Event::Resized(size)) => {
                         Some(Message::WindowResized(size.width))
+                    }
+                    iced::Event::Window(iced::window::Event::CloseRequested) => {
+                        Some(Message::AppCloseRequested)
                     }
                     iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                         key,
@@ -2900,6 +2920,26 @@ impl App {
                 }
                 Task::none()
             }
+            Message::AppCloseRequested => {
+                if let AppState::Main {
+                    playback,
+                    audio_session,
+                    ui_scale,
+                    sidebar_width,
+                    right_panel_width,
+                    ..
+                } = &mut self.state
+                {
+                    perform_graceful_shutdown(
+                        playback,
+                        audio_session.as_ref(),
+                        *ui_scale,
+                        *sidebar_width,
+                        *right_panel_width,
+                    );
+                }
+                std::process::exit(0);
+            }
         }
     }
 
@@ -3348,5 +3388,18 @@ mod tests {
         assert!((min_scale - 0.70).abs() < f32::EPSILON);
         assert!((max_scale - 1.30).abs() < f32::EPSILON);
         assert!((normal_scale - 1.05).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_perform_graceful_shutdown() {
+        let playback = PlaybackState {
+            volume: 0.65,
+            ..Default::default()
+        };
+        perform_graceful_shutdown(&playback, None, 1.15, 260.0, 320.0);
+        let saved_vol = load_saved_volume();
+        let saved_scale = load_ui_scale();
+        assert!((saved_vol - 0.65).abs() < f32::EPSILON);
+        assert!((saved_scale - 1.15).abs() < f32::EPSILON);
     }
 }
