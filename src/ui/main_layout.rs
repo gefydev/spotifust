@@ -54,7 +54,7 @@ fn view_image_or_icon<'a>(
         .into()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 pub fn view<'a>(
     nav_item: &'a NavigationItem,
     playback: &'a PlaybackState,
@@ -81,12 +81,23 @@ pub fn view<'a>(
     active_context_menu: Option<&'a crate::app::ContextMenuState>,
     active_modal: Option<&'a crate::app::ActiveModal>,
     toast_notification: Option<&'a String>,
+    can_go_back: bool,
+    can_go_forward: bool,
+    current_lyrics: Option<&'a crate::api::lyrics::LyricsData>,
+    is_loading_lyrics: bool,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
     }
 
-    let top_bar = view_top_bar(*nav_item, user_profile, search_query, loaded_images);
+    let top_bar = view_top_bar(
+        *nav_item,
+        user_profile,
+        search_query,
+        loaded_images,
+        can_go_back,
+        can_go_forward,
+    );
     let sidebar = view_sidebar_panel(
         sidebar_width,
         user_playlists,
@@ -117,6 +128,8 @@ pub fn view<'a>(
         context_queue,
         context_index,
         loaded_images,
+        current_lyrics,
+        is_loading_lyrics,
     );
     let playback_bar = view_playback_bar(playback, active_right_panel, loaded_images);
 
@@ -174,6 +187,8 @@ fn view_top_bar<'a>(
     user_profile: Option<&'a crate::api::user::UserProfile>,
     search_query: &'a str,
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
+    can_go_back: bool,
+    can_go_forward: bool,
 ) -> Element<'a, Message> {
     let logo_handle = iced::widget::image::Handle::from_bytes(LOGO_BYTES);
     let logo_img = Image::new(logo_handle)
@@ -194,6 +209,11 @@ fn view_top_bar<'a>(
                 })
                 .color(theme::TEXT_PRIMARY),
         );
+
+    let back_btn =
+        icon_button_circle_disabled(Icon::ChevronLeft, Message::NavigateBack, can_go_back);
+    let forward_btn =
+        icon_button_circle_disabled(Icon::ChevronRight, Message::NavigateForward, can_go_forward);
 
     let home_btn = icon_button_circle_active(
         Icon::Home,
@@ -291,6 +311,8 @@ fn view_top_bar<'a>(
                 Row::new()
                     .spacing(8)
                     .align_y(Alignment::Center)
+                    .push(back_btn)
+                    .push(forward_btn)
                     .push(home_btn)
                     .push(search_bar),
             )
@@ -1445,7 +1467,7 @@ fn scroll_row(content: Row<'_, Message>) -> Element<'_, Message> {
         .into()
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn view_right_panel<'a>(
     active_tab: Option<RightPanelTab>,
     width: f32,
@@ -1454,6 +1476,8 @@ fn view_right_panel<'a>(
     context_queue: &'a [crate::app::TrackInfo],
     context_index: usize,
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
+    current_lyrics: Option<&'a crate::api::lyrics::LyricsData>,
+    is_loading_lyrics: bool,
 ) -> Element<'a, Message> {
     let Some(tab) = active_tab else {
         return Container::new(Space::new()).into();
@@ -1481,36 +1505,123 @@ fn view_right_panel<'a>(
 
     let body: Element<'a, Message> = match tab {
         RightPanelTab::Lyrics => {
-            let lyrics_card = Container::new(
-                Column::new()
-                    .spacing(12)
-                    .push(
-                        Text::new("♫ Synchronized Lyrics")
-                            .size(16)
-                            .font(iced::Font {
-                                weight: iced::font::Weight::Bold,
-                                ..Default::default()
-                            })
-                            .color(theme::ACCENT),
-                    )
-                    .push(
-                        Text::new("Lyrics provider connected.")
+            if is_loading_lyrics {
+                Container::new(
+                    Column::new().spacing(12).align_x(Alignment::Center).push(
+                        Text::new("Loading synchronized lyrics...")
                             .size(14)
                             .color(theme::TEXT_SECONDARY),
                     ),
-            )
-            .padding(20)
-            .style(|_theme| container::Style {
-                background: Some(Background::Color(theme::SURFACE_CARD)),
-                border: Border {
-                    radius: theme::RADIUS_MD.into(),
-                    color: theme::BORDER_SUBTLE,
-                    width: 1.0,
-                },
-                ..Default::default()
-            });
+                )
+                .padding(24)
+                .width(Length::Fill)
+                .into()
+            } else if let Some(lyrics) = current_lyrics {
+                if lyrics.lines.is_empty() {
+                    Container::new(
+                        Column::new()
+                            .spacing(8)
+                            .align_x(Alignment::Center)
+                            .push(
+                                Text::new("No lyrics available")
+                                    .size(16)
+                                    .font(iced::Font {
+                                        weight: iced::font::Weight::Bold,
+                                        ..Default::default()
+                                    })
+                                    .color(theme::TEXT_PRIMARY),
+                            )
+                            .push(
+                                Text::new("We couldn't find lyrics for this song.")
+                                    .size(13)
+                                    .color(theme::TEXT_SECONDARY),
+                            ),
+                    )
+                    .padding(24)
+                    .width(Length::Fill)
+                    .into()
+                } else {
+                    let current_pos = playback.progress_ms;
+                    let active_idx = lyrics
+                        .lines
+                        .iter()
+                        .rposition(|l| l.timestamp_ms <= current_pos);
 
-            Column::new().spacing(16).push(lyrics_card).into()
+                    let mut lines_col = Column::new().spacing(12).width(Length::Fill);
+
+                    for (idx, line) in lyrics.lines.iter().enumerate() {
+                        let is_active = Some(idx) == active_idx;
+                        let is_past = active_idx.is_some_and(|a| idx < a);
+
+                        let (text_color, font_weight, size) = if is_active {
+                            (theme::ACCENT, iced::font::Weight::Bold, 17.0)
+                        } else if is_past {
+                            (theme::TEXT_SECONDARY, iced::font::Weight::Normal, 14.0)
+                        } else {
+                            (theme::TEXT_MUTED, iced::font::Weight::Normal, 14.0)
+                        };
+
+                        let line_btn = Button::new(
+                            Text::new(&line.text)
+                                .size(size)
+                                .font(iced::Font {
+                                    weight: font_weight,
+                                    ..Default::default()
+                                })
+                                .color(text_color),
+                        )
+                        .padding([4, 8])
+                        .width(Length::Fill)
+                        .on_press(Message::SeekToMs(line.timestamp_ms))
+                        .style(|_theme, status| {
+                            let bg = match status {
+                                iced::widget::button::Status::Hovered => {
+                                    Background::Color(theme::SURFACE_HOVER)
+                                }
+                                _ => Background::Color(Color::TRANSPARENT),
+                            };
+                            iced::widget::button::Style {
+                                background: Some(bg),
+                                border: Border {
+                                    radius: theme::RADIUS_SM.into(),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            }
+                        });
+
+                        lines_col = lines_col.push(line_btn);
+                    }
+
+                    Scrollable::new(lines_col)
+                        .height(Length::Fill)
+                        .width(Length::Fill)
+                        .into()
+                }
+            } else {
+                Container::new(
+                    Column::new()
+                        .spacing(8)
+                        .align_x(Alignment::Center)
+                        .push(
+                            Text::new("No lyrics available")
+                                .size(16)
+                                .font(iced::Font {
+                                    weight: iced::font::Weight::Bold,
+                                    ..Default::default()
+                                })
+                                .color(theme::TEXT_PRIMARY),
+                        )
+                        .push(
+                            Text::new("Play a track to view synced lyrics.")
+                                .size(13)
+                                .color(theme::TEXT_SECONDARY),
+                        ),
+                )
+                .padding(24)
+                .width(Length::Fill)
+                .into()
+            }
         }
         RightPanelTab::NowPlaying => {
             let (track_title_str, artist_name_str, img_url) =
@@ -1883,15 +1994,8 @@ fn view_playback_bar<'a>(
             playback.repeat_mode != crate::app::RepeatMode::Off,
         ));
 
-    let duration_ms = playback
-        .current_track
-        .as_ref()
-        .map_or(225_000, |t| t.duration_ms);
-    let progress_percent = if duration_ms > 0 {
-        (playback.progress_ms as f32 / duration_ms as f32).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    let duration_ms = playback.current_track.as_ref().map_or(0, |t| t.duration_ms);
+    let progress_percent = calculate_progress_ratio(playback.progress_ms, duration_ms);
 
     let seek_bar = slider(0.0..=1.0, progress_percent, Message::SeekTo)
         .step(0.001_f32)
@@ -2138,6 +2242,31 @@ fn icon_button_circle<'a>(icon: Icon, message: Message) -> Element<'a, Message> 
         }
     })
     .into()
+}
+
+fn icon_button_circle_disabled<'a>(
+    icon: Icon,
+    message: Message,
+    enabled: bool,
+) -> Element<'a, Message> {
+    if enabled {
+        icon_button_circle(icon, message)
+    } else {
+        Container::new(icon.view_colored(16.0, theme::TEXT_MUTED))
+            .width(Length::Fixed(32.0))
+            .height(Length::Fixed(32.0))
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
+            .style(|_theme| container::Style {
+                background: Some(Background::Color(Color::from_rgba(0.12, 0.12, 0.12, 0.5))),
+                border: Border {
+                    radius: theme::RADIUS_PILL.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .into()
+    }
 }
 
 fn icon_button_circle_active<'a>(
@@ -3257,4 +3386,50 @@ pub fn thin_scrollable<'a, Message: 'a>(
             };
             s
         })
+}
+
+#[must_use]
+pub fn calculate_progress_ratio(progress_ms: u32, duration_ms: u32) -> f32 {
+    if duration_ms > 0 {
+        #[allow(clippy::cast_precision_loss)]
+        (progress_ms as f32 / duration_ms as f32).clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::float_cmp)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_duration_zero() {
+        assert_eq!(format_duration(0), "0:00");
+    }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        assert_eq!(format_duration(45_000), "0:45");
+    }
+
+    #[test]
+    fn test_format_duration_minutes_and_seconds() {
+        assert_eq!(format_duration(225_000), "3:45");
+    }
+
+    #[test]
+    fn test_calculate_progress_ratio_zero_duration() {
+        assert_eq!(calculate_progress_ratio(5000, 0), 0.0);
+    }
+
+    #[test]
+    fn test_calculate_progress_ratio_halfway() {
+        assert_eq!(calculate_progress_ratio(50_000, 100_000), 0.5);
+    }
+
+    #[test]
+    fn test_calculate_progress_ratio_clamped() {
+        assert_eq!(calculate_progress_ratio(150_000, 100_000), 1.0);
+    }
 }

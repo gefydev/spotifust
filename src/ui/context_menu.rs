@@ -19,22 +19,18 @@ pub fn view_context_menu(state: &crate::app::ContextMenuState) -> Element<'_, Me
             let album_name = track.album.clone();
             let artist_name = track.artist.clone();
 
-            // Share link
-            let share_url = format!("https://open.spotify.com/track/{track_uri}");
             menu_col = menu_col.push(menu_item_button(
-                Icon::Share,
-                "Compartir link",
-                Message::CopyShareLink(track_title.clone(), share_url),
+                Icon::Queue,
+                "Agregar a la fila",
+                Message::AddToQueue(track.clone()),
             ));
 
-            // Add to playlist
             menu_col = menu_col.push(menu_item_button(
                 Icon::Plus,
                 "Agregar a playlist",
                 Message::OpenAddToPlaylistModal(vec![track_uri.clone()]),
             ));
 
-            // Remove from current playlist if inside a playlist
             if let Some(pl_id) = from_playlist_id {
                 menu_col = menu_col.push(menu_item_button(
                     Icon::Trash,
@@ -43,32 +39,23 @@ pub fn view_context_menu(state: &crate::app::ContextMenuState) -> Element<'_, Me
                 ));
             }
 
-            // Add to Queue
-            menu_col = menu_col.push(menu_item_button(
-                Icon::Queue,
-                "Agregar a la fila",
-                Message::AddToQueue(track.clone()),
-            ));
-
-            // Go to Queue tab
-            menu_col = menu_col.push(menu_item_button(
-                Icon::Queue,
-                "Ir a la fila de reproducción",
-                Message::OpenQueuePanel,
-            ));
-
-            // Go to Album
             menu_col = menu_col.push(menu_item_button(
                 Icon::Album,
-                format!("Ir al álbum ({album_name})"),
+                "Ir al álbum",
                 Message::SelectAlbum(album_name),
             ));
 
-            // Go to Artist
             menu_col = menu_col.push(menu_item_button(
                 Icon::User,
-                format!("Ir al artista ({artist_name})"),
+                "Ir al artista",
                 Message::SelectArtist(artist_name),
+            ));
+
+            let share_url = format!("https://open.spotify.com/track/{track_uri}");
+            menu_col = menu_col.push(menu_item_button(
+                Icon::Share,
+                "Copiar link",
+                Message::CopyShareLink(track_title, share_url),
             ));
         }
         ContextMenuTarget::Album(album) => {
@@ -77,21 +64,21 @@ pub fn view_context_menu(state: &crate::app::ContextMenuState) -> Element<'_, Me
             let share_url = format!("https://open.spotify.com/album/{album_id}");
 
             menu_col = menu_col.push(menu_item_button(
-                Icon::Share,
-                "Compartir álbum",
-                Message::CopyShareLink(album_name.clone(), share_url),
-            ));
-
-            menu_col = menu_col.push(menu_item_button(
                 Icon::Heart,
-                "Guardar en tu biblioteca",
+                "Guardar en biblioteca",
                 Message::SaveAlbumToggle(album_id.clone(), false),
             ));
 
             menu_col = menu_col.push(menu_item_button(
                 Icon::Plus,
-                "Agregar canciones del álbum a playlist",
+                "Agregar a playlist",
                 Message::OpenAddToPlaylistModal(vec![album_id]),
+            ));
+
+            menu_col = menu_col.push(menu_item_button(
+                Icon::Share,
+                "Copiar link",
+                Message::CopyShareLink(album_name, share_url),
             ));
         }
         ContextMenuTarget::Playlist(playlist) => {
@@ -100,14 +87,8 @@ pub fn view_context_menu(state: &crate::app::ContextMenuState) -> Element<'_, Me
             let share_url = format!("https://open.spotify.com/playlist/{pl_id}");
 
             menu_col = menu_col.push(menu_item_button(
-                Icon::Share,
-                "Compartir playlist",
-                Message::CopyShareLink(pl_name.clone(), share_url),
-            ));
-
-            menu_col = menu_col.push(menu_item_button(
                 Icon::Edit,
-                "Editar nombre y datos",
+                "Editar detalles",
                 Message::OpenEditPlaylistModal(pl_id.clone(), pl_name.clone(), String::new()),
             ));
 
@@ -119,14 +100,20 @@ pub fn view_context_menu(state: &crate::app::ContextMenuState) -> Element<'_, Me
 
             menu_col = menu_col.push(menu_item_button(
                 Icon::Lock,
-                "Hacer privada / pública",
+                "Cambiar privacidad",
                 Message::TogglePlaylistPrivacy(pl_id.clone(), true),
             ));
 
             menu_col = menu_col.push(menu_item_button(
                 Icon::Plus,
-                "Copiar canciones a otra playlist",
-                Message::OpenCopyPlaylistModal(pl_id, pl_name),
+                "Copiar a otra playlist",
+                Message::OpenCopyPlaylistModal(pl_id, pl_name.clone()),
+            ));
+
+            menu_col = menu_col.push(menu_item_button(
+                Icon::Share,
+                "Copiar link",
+                Message::CopyShareLink(pl_name, share_url),
             ));
         }
         ContextMenuTarget::Artist {
@@ -144,20 +131,25 @@ pub fn view_context_menu(state: &crate::app::ContextMenuState) -> Element<'_, Me
 
             menu_col = menu_col.push(menu_item_button(
                 Icon::Trash,
-                format!("Dejar de seguir a {aname}"),
+                "Dejar de seguir",
                 Message::FollowArtistToggle(aid, true),
             ));
         }
     }
 
     let menu_card = Container::new(menu_col)
-        .width(Length::Fixed(240.0))
+        .width(Length::Fixed(190.0))
         .style(|_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(theme::SURFACE_CARD)),
+            background: Some(Background::Color(Color::from_rgb(0.16, 0.16, 0.16))),
             border: Border {
                 radius: theme::RADIUS_MD.into(),
-                color: theme::BORDER_SUBTLE,
+                color: Color::from_rgba(1.0, 1.0, 1.0, 0.08),
                 width: 1.0,
+            },
+            shadow: iced::Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.6),
+                offset: iced::Vector::new(0.0, 8.0),
+                blur_radius: 16.0,
             },
             ..Default::default()
         });
@@ -197,17 +189,17 @@ fn menu_item_button<'a>(
     let label_str = label.into();
     Button::new(
         Row::new()
-            .spacing(10)
+            .spacing(8)
             .align_y(Alignment::Center)
-            .push(icon.view_colored(16.0, theme::TEXT_PRIMARY))
+            .push(icon.view_colored(14.0, theme::TEXT_SECONDARY))
             .push(
                 Text::new(label_str)
-                    .size(13)
+                    .size(12)
                     .color(theme::TEXT_PRIMARY)
                     .width(Length::Fill),
             ),
     )
-    .padding([8, 12])
+    .padding([6, 8])
     .width(Length::Fill)
     .on_press(message)
     .style(|_theme, status| {

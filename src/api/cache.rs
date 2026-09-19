@@ -5,10 +5,13 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// Returns the local cache directory for Spotifust image and metadata storage.
 #[must_use]
 pub fn get_cache_dir() -> PathBuf {
-    std::env::temp_dir().join("spotifust_cache")
+    if let Ok(home) = std::env::var("HOME") {
+        PathBuf::from(home).join(".cache").join("spotifust")
+    } else {
+        std::env::temp_dir().join("spotifust_cache")
+    }
 }
 
 /// Helper function to generate a safe filename from a URL.
@@ -176,5 +179,11 @@ mod tests {
 
         let loaded: Option<Vec<String>> = DiskMetadataCache::load(key);
         assert_eq!(loaded, Some(data));
+    }
+
+    #[test]
+    fn test_get_cache_dir() {
+        let dir = get_cache_dir();
+        assert!(dir.to_string_lossy().contains("spotifust"));
     }
 }

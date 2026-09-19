@@ -103,4 +103,47 @@ mod tests {
         assert_eq!(parse_lrc_timestamp("01:23.45"), 83_450);
         assert_eq!(parse_lrc_timestamp("00:00.00"), 0);
     }
+
+    #[test]
+    fn test_lyrics_data_active_line_detection() {
+        let lyrics = LyricsData {
+            track_name: "Midnight City".to_string(),
+            artist_name: "M83".to_string(),
+            lines: vec![
+                SyncedLyricLine {
+                    timestamp_ms: 0,
+                    text: "Intro".to_string(),
+                },
+                SyncedLyricLine {
+                    timestamp_ms: 10_000,
+                    text: "Waiting in a car".to_string(),
+                },
+                SyncedLyricLine {
+                    timestamp_ms: 20_000,
+                    text: "Waiting for a ride in the dark".to_string(),
+                },
+            ],
+        };
+
+        let current_pos = 15_000;
+        let active_idx = lyrics
+            .lines
+            .iter()
+            .rposition(|l| l.timestamp_ms <= current_pos);
+        assert_eq!(active_idx, Some(1));
+
+        let current_pos_start = 500;
+        let active_idx_start = lyrics
+            .lines
+            .iter()
+            .rposition(|l| l.timestamp_ms <= current_pos_start);
+        assert_eq!(active_idx_start, Some(0));
+
+        let current_pos_later = 25_000;
+        let active_idx_later = lyrics
+            .lines
+            .iter()
+            .rposition(|l| l.timestamp_ms <= current_pos_later);
+        assert_eq!(active_idx_later, Some(2));
+    }
 }
