@@ -46,6 +46,15 @@ pub enum SidebarFilter {
     Albums,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchCategoryFilter {
+    #[default]
+    All,
+    Tracks,
+    Albums,
+    Artists,
+}
+
 #[derive(Debug, Clone)]
 pub struct SelectedAlbumState {
     pub id: String,
@@ -242,6 +251,7 @@ pub enum AppState {
         current_lyrics: Option<crate::api::lyrics::LyricsData>,
         is_loading_lyrics: bool,
         autoplay_enabled: bool,
+        search_category_filter: SearchCategoryFilter,
     },
 }
 
@@ -366,6 +376,7 @@ pub enum Message {
     SeekToMs(u32),
     ToggleAutoplay,
     AutoplayRecommendationsFetched(Result<Vec<crate::api::tracks::TopTrack>, AppError>),
+    SearchCategoryFilterSelected(SearchCategoryFilter),
 }
 
 struct PlayerEventsRecipe {
@@ -789,6 +800,7 @@ impl App {
                     current_lyrics: None,
                     is_loading_lyrics: false,
                     autoplay_enabled: true,
+                    search_category_filter: SearchCategoryFilter::All,
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -2658,6 +2670,16 @@ impl App {
                 }
                 Task::none()
             }
+            Message::SearchCategoryFilterSelected(filter) => {
+                if let AppState::Main {
+                    search_category_filter,
+                    ..
+                } = &mut self.state
+                {
+                    *search_category_filter = filter;
+                }
+                Task::none()
+            }
             Message::AutoplayRecommendationsFetched(res) => {
                 let mut tasks = Vec::new();
                 if let AppState::Main {
@@ -2754,6 +2776,7 @@ impl App {
                 current_lyrics,
                 is_loading_lyrics,
                 autoplay_enabled,
+                search_category_filter,
                 ..
             } => crate::ui::main_layout::view(
                 nav_item,
@@ -2786,6 +2809,7 @@ impl App {
                 current_lyrics.as_ref(),
                 *is_loading_lyrics,
                 *autoplay_enabled,
+                *search_category_filter,
             ),
         };
 
@@ -3035,5 +3059,18 @@ mod tests {
         assert!(!autoplay_enabled);
         autoplay_enabled = !autoplay_enabled;
         assert!(autoplay_enabled);
+    }
+
+    #[test]
+    fn test_search_category_filter_default_and_variants() {
+        assert_eq!(SearchCategoryFilter::default(), SearchCategoryFilter::All);
+        let mut filter = SearchCategoryFilter::All;
+        assert_eq!(filter, SearchCategoryFilter::All);
+        filter = SearchCategoryFilter::Tracks;
+        assert_eq!(filter, SearchCategoryFilter::Tracks);
+        filter = SearchCategoryFilter::Albums;
+        assert_eq!(filter, SearchCategoryFilter::Albums);
+        filter = SearchCategoryFilter::Artists;
+        assert_eq!(filter, SearchCategoryFilter::Artists);
     }
 }

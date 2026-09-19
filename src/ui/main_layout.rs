@@ -1,4 +1,6 @@
-use crate::app::{Message, NavigationItem, PlaybackState, RightPanelTab, SidebarFilter};
+use crate::app::{
+    Message, NavigationItem, PlaybackState, RightPanelTab, SearchCategoryFilter, SidebarFilter,
+};
 use crate::ui::icons::Icon;
 use crate::ui::theme;
 use iced::{
@@ -86,6 +88,7 @@ pub fn view<'a>(
     current_lyrics: Option<&'a crate::api::lyrics::LyricsData>,
     is_loading_lyrics: bool,
     autoplay_enabled: bool,
+    search_category_filter: SearchCategoryFilter,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
@@ -121,6 +124,7 @@ pub fn view<'a>(
         is_searching,
         loaded_images,
         autoplay_enabled,
+        search_category_filter,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -633,13 +637,19 @@ fn view_main_content<'a>(
     is_searching: bool,
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
     autoplay_enabled: bool,
+    search_category_filter: SearchCategoryFilter,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
         return view_settings_page(autoplay_enabled);
     }
 
     if current_nav == NavigationItem::Search {
-        return view_search_results(search_results, is_searching, loaded_images);
+        return view_search_results(
+            search_results,
+            is_searching,
+            loaded_images,
+            search_category_filter,
+        );
     }
 
     if let Some(sp) = selected_playlist {
@@ -2762,6 +2772,7 @@ fn view_search_results<'a>(
     results: &'a crate::api::search::SearchResults,
     is_searching: bool,
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
+    category_filter: SearchCategoryFilter,
 ) -> Element<'a, Message> {
     if is_searching {
         return Container::new(
@@ -2789,8 +2800,62 @@ fn view_search_results<'a>(
         .into();
     }
 
-    let mut tracks_col = Column::new().spacing(8);
-    for (idx, track) in results.tracks.iter().enumerate() {
+    let make_pill = |label: &'static str, filter: SearchCategoryFilter| {
+        let is_selected = category_filter == filter;
+        Button::new(
+            Text::new(label)
+                .size(13)
+                .font(iced::Font {
+                    weight: if is_selected {
+                        iced::font::Weight::Bold
+                    } else {
+                        iced::font::Weight::Normal
+                    },
+                    ..Default::default()
+                })
+                .color(if is_selected {
+                    theme::BG_BASE
+                } else {
+                    theme::TEXT_PRIMARY
+                }),
+        )
+        .padding([7, 16])
+        .on_press(Message::SearchCategoryFilterSelected(filter))
+        .style(move |_theme, status| {
+            if is_selected {
+                iced::widget::button::Style {
+                    background: Some(Background::Color(theme::TEXT_PRIMARY)),
+                    border: Border {
+                        radius: 50.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            } else {
+                let bg = match status {
+                    iced::widget::button::Status::Hovered => theme::SURFACE_HOVER,
+                    _ => theme::SURFACE_CARD,
+                };
+                iced::widget::button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        radius: 50.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            }
+        })
+    };
+
+    let pills_row = Row::new()
+        .spacing(8)
+        .push(make_pill("All", SearchCategoryFilter::All))
+        .push(make_pill("Songs", SearchCategoryFilter::Tracks))
+        .push(make_pill("Artists", SearchCategoryFilter::Artists))
+        .push(make_pill("Albums", SearchCategoryFilter::Albums));
+
+    let render_track_row = |idx: usize, track: &'a crate::api::search::SearchResultTrack| {
         let formatted_dur = format_duration(track.duration_ms);
         let uri = track.uri.clone();
 
@@ -2837,7 +2902,7 @@ fn view_search_results<'a>(
                     .color(theme::TEXT_SECONDARY),
             );
 
-        let track_btn = Button::new(Container::new(row).padding([6, 10]).width(Length::Fill))
+        Button::new(Container::new(row).padding([6, 10]).width(Length::Fill))
             .padding(0)
             .on_press(Message::PlayTrack(uri))
             .style(|_theme, status| {
@@ -2856,80 +2921,256 @@ fn view_search_results<'a>(
                     },
                     _ => base,
                 }
-            });
+            })
+    };
 
-        tracks_col = tracks_col.push(track_btn);
-    }
+    let mut content = Column::new().spacing(24).push(pills_row);
 
-    let mut artists_row = Row::new().spacing(16);
-    for artist in results.artists.iter().take(6) {
-        let a_id = artist.id.clone();
-        artists_row = artists_row.push(media_card_with_image(
-            &artist.name,
-            "Artist",
-            artist.image_url.as_deref(),
-            loaded_images,
-            Icon::User,
-            Message::SelectArtist(a_id),
-        ));
-    }
+    match category_filter {
+        SearchCategoryFilter::All => {
+            if let Some(top_track) = results.tracks.first() {
+                let top_uri = top_track.uri.clone();
+                let top_cover = view_image_or_icon(
+                    top_track.image_url.as_deref(),
+                    loaded_images,
+                    Icon::MusicNote,
+                    96.0,
+                    theme::RADIUS_MD,
+                );
 
-    let mut albums_row = Row::new().spacing(16);
-    for album in results.albums.iter().take(6) {
-        let subtitle = format!("{} • Album", album.artist_name);
-        let a_id = album.id.clone();
-        albums_row = albums_row.push(media_card_with_image(
-            &album.name,
-            &subtitle,
-            album.image_url.as_deref(),
-            loaded_images,
-            Icon::Album,
-            Message::SelectAlbum(a_id),
-        ));
-    }
-
-    let mut content = Column::new().spacing(28);
-
-    if !results.tracks.is_empty() {
-        content = content
-            .push(
-                Text::new("Songs")
-                    .size(22)
-                    .font(iced::Font {
-                        weight: iced::font::Weight::Bold,
+                let top_card = Button::new(
+                    Container::new(
+                        Column::new()
+                            .spacing(14)
+                            .push(top_cover)
+                            .push(
+                                Text::new(&top_track.title)
+                                    .size(24)
+                                    .font(iced::Font {
+                                        weight: iced::font::Weight::Bold,
+                                        ..Default::default()
+                                    })
+                                    .color(theme::TEXT_PRIMARY),
+                            )
+                            .push(
+                                Row::new()
+                                    .spacing(8)
+                                    .align_y(Alignment::Center)
+                                    .push(
+                                        Container::new(
+                                            Text::new("Song")
+                                                .size(11)
+                                                .font(iced::Font {
+                                                    weight: iced::font::Weight::Bold,
+                                                    ..Default::default()
+                                                })
+                                                .color(theme::TEXT_PRIMARY),
+                                        )
+                                        .padding([3, 8])
+                                        .style(|_theme| {
+                                            container::Style {
+                                                background: Some(Background::Color(
+                                                    Color::from_rgba(1.0, 1.0, 1.0, 0.1),
+                                                )),
+                                                border: Border {
+                                                    radius: 50.0.into(),
+                                                    ..Default::default()
+                                                },
+                                                ..Default::default()
+                                            }
+                                        }),
+                                    )
+                                    .push(
+                                        Text::new(format!(
+                                            "{} • {}",
+                                            top_track.artist, top_track.album
+                                        ))
+                                        .size(13)
+                                        .color(theme::TEXT_SECONDARY),
+                                    ),
+                            ),
+                    )
+                    .padding(20)
+                    .width(Length::Fixed(360.0)),
+                )
+                .padding(0)
+                .on_press(Message::PlayTrack(top_uri))
+                .style(|_theme, status| {
+                    let bg = match status {
+                        iced::widget::button::Status::Hovered => theme::SURFACE_HOVER,
+                        _ => theme::SURFACE_CARD,
+                    };
+                    iced::widget::button::Style {
+                        background: Some(Background::Color(bg)),
+                        border: Border {
+                            radius: theme::RADIUS_LG.into(),
+                            ..Default::default()
+                        },
                         ..Default::default()
-                    })
-                    .color(theme::TEXT_PRIMARY),
-            )
-            .push(tracks_col);
-    }
+                    }
+                });
 
-    if !results.artists.is_empty() {
-        content = content
-            .push(
-                Text::new("Artists")
-                    .size(22)
-                    .font(iced::Font {
-                        weight: iced::font::Weight::Bold,
-                        ..Default::default()
-                    })
-                    .color(theme::TEXT_PRIMARY),
-            )
-            .push(scroll_row(artists_row));
-    }
+                let mut top_songs_col = Column::new().spacing(4);
+                for (idx, track) in results.tracks.iter().take(4).enumerate() {
+                    top_songs_col = top_songs_col.push(render_track_row(idx, track));
+                }
 
-    if !results.albums.is_empty() {
-        content = content
-            .push(
-                Text::new("Albums")
-                    .size(22)
-                    .font(iced::Font {
-                        weight: iced::font::Weight::Bold,
-                        ..Default::default()
-                    })
-                    .color(theme::TEXT_PRIMARY),
-            )
-            .push(scroll_row(albums_row));
+                let top_section = Row::new()
+                    .spacing(24)
+                    .push(
+                        Column::new()
+                            .spacing(12)
+                            .push(
+                                Text::new("Top result")
+                                    .size(20)
+                                    .font(iced::Font {
+                                        weight: iced::font::Weight::Bold,
+                                        ..Default::default()
+                                    })
+                                    .color(theme::TEXT_PRIMARY),
+                            )
+                            .push(top_card),
+                    )
+                    .push(
+                        Column::new()
+                            .spacing(12)
+                            .width(Length::Fill)
+                            .push(
+                                Text::new("Songs")
+                                    .size(20)
+                                    .font(iced::Font {
+                                        weight: iced::font::Weight::Bold,
+                                        ..Default::default()
+                                    })
+                                    .color(theme::TEXT_PRIMARY),
+                            )
+                            .push(top_songs_col),
+                    );
+
+                content = content.push(top_section);
+            }
+
+            if !results.artists.is_empty() {
+                let mut artists_row = Row::new().spacing(16);
+                for artist in results.artists.iter().take(6) {
+                    let a_id = artist.id.clone();
+                    artists_row = artists_row.push(media_card_with_image(
+                        &artist.name,
+                        "Artist",
+                        artist.image_url.as_deref(),
+                        loaded_images,
+                        Icon::User,
+                        Message::SelectArtist(a_id),
+                    ));
+                }
+                content = content
+                    .push(
+                        Text::new("Artists")
+                            .size(20)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..Default::default()
+                            })
+                            .color(theme::TEXT_PRIMARY),
+                    )
+                    .push(scroll_row(artists_row));
+            }
+
+            if !results.albums.is_empty() {
+                let mut albums_row = Row::new().spacing(16);
+                for album in results.albums.iter().take(6) {
+                    let subtitle = format!("{} • Album", album.artist_name);
+                    let a_id = album.id.clone();
+                    albums_row = albums_row.push(media_card_with_image(
+                        &album.name,
+                        &subtitle,
+                        album.image_url.as_deref(),
+                        loaded_images,
+                        Icon::Album,
+                        Message::SelectAlbum(a_id),
+                    ));
+                }
+                content = content
+                    .push(
+                        Text::new("Albums")
+                            .size(20)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..Default::default()
+                            })
+                            .color(theme::TEXT_PRIMARY),
+                    )
+                    .push(scroll_row(albums_row));
+            }
+        }
+        SearchCategoryFilter::Tracks => {
+            let mut tracks_col = Column::new().spacing(4);
+            for (idx, track) in results.tracks.iter().enumerate() {
+                tracks_col = tracks_col.push(render_track_row(idx, track));
+            }
+            content = content
+                .push(
+                    Text::new("Songs")
+                        .size(20)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..Default::default()
+                        })
+                        .color(theme::TEXT_PRIMARY),
+                )
+                .push(tracks_col);
+        }
+        SearchCategoryFilter::Artists => {
+            let mut artists_row = Row::new().spacing(16);
+            for artist in &results.artists {
+                let a_id = artist.id.clone();
+                artists_row = artists_row.push(media_card_with_image(
+                    &artist.name,
+                    "Artist",
+                    artist.image_url.as_deref(),
+                    loaded_images,
+                    Icon::User,
+                    Message::SelectArtist(a_id),
+                ));
+            }
+            content = content
+                .push(
+                    Text::new("Artists")
+                        .size(20)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..Default::default()
+                        })
+                        .color(theme::TEXT_PRIMARY),
+                )
+                .push(scroll_row(artists_row));
+        }
+        SearchCategoryFilter::Albums => {
+            let mut albums_row = Row::new().spacing(16);
+            for album in &results.albums {
+                let subtitle = format!("{} • Album", album.artist_name);
+                let a_id = album.id.clone();
+                albums_row = albums_row.push(media_card_with_image(
+                    &album.name,
+                    &subtitle,
+                    album.image_url.as_deref(),
+                    loaded_images,
+                    Icon::Album,
+                    Message::SelectAlbum(a_id),
+                ));
+            }
+            content = content
+                .push(
+                    Text::new("Albums")
+                        .size(20)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..Default::default()
+                        })
+                        .color(theme::TEXT_PRIMARY),
+                )
+                .push(scroll_row(albums_row));
+        }
     }
 
     thin_scrollable(Container::new(content).width(Length::Fill).padding(24)).into()
