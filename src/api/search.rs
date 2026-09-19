@@ -13,6 +13,7 @@ pub struct SearchResultTrack {
     pub duration_ms: u32,
     pub uri: String,
     pub image_url: Option<String>,
+    pub explicit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +78,7 @@ pub async fn execute_search(
                     duration_ms: u32::try_from(track.duration.num_milliseconds()).unwrap_or(0),
                     uri,
                     image_url,
+                    explicit: track.explicit,
                 });
             }
         }
@@ -133,5 +135,20 @@ mod tests {
         assert!(res.tracks.is_empty());
         assert!(res.albums.is_empty());
         assert!(res.artists.is_empty());
+    }
+
+    #[test]
+    fn test_search_result_track_explicit() {
+        let t = SearchResultTrack {
+            id: "track_1".to_string(),
+            title: "Test Track".to_string(),
+            artist: "Test Artist".to_string(),
+            album: "Test Album".to_string(),
+            duration_ms: 200_000,
+            uri: "spotify:track:track_1".to_string(),
+            image_url: None,
+            explicit: true,
+        };
+        assert!(t.explicit);
     }
 }

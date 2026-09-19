@@ -12,6 +12,8 @@ pub struct TopTrack {
     pub duration_ms: u32,
     pub uri: String,
     pub image_url: Option<String>,
+    #[serde(default)]
+    pub explicit: bool,
 }
 
 /// Fetches the user's top tracks (`/me/top/tracks`).
@@ -47,6 +49,7 @@ pub async fn fetch_top_tracks(spotify: &AuthCodePkceSpotify) -> Result<Vec<TopTr
                 duration_ms: u32::try_from(full_track.duration.num_milliseconds()).unwrap_or(0),
                 uri,
                 image_url,
+                explicit: full_track.explicit,
             });
         }
 
@@ -173,6 +176,7 @@ pub async fn fetch_recommendations(
                 duration_ms: u32::try_from(track.duration.num_milliseconds()).unwrap_or(0),
                 uri,
                 image_url: None,
+                explicit: track.explicit,
             });
         }
         Ok(tracks)
@@ -194,8 +198,10 @@ mod tests {
             duration_ms: 180_000,
             uri: "spotify:track:tt_1".to_string(),
             image_url: None,
+            explicit: false,
         };
         assert_eq!(t.title, "Stardust");
+        assert!(!t.explicit);
     }
 
     #[test]

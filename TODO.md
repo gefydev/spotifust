@@ -139,7 +139,7 @@
 ### Phase 9: Comprehensive Functional Settings System (100% Backend Wired, Zero Mockups)
 
 - [ ] SECTION 1 - Account & Language: External browser link to login methods (`spotify.com/account`) & persistent i18n UI language selector dropdown
-- [ ] SECTION 2.1 - Explicit Content: Explicit content filter toggle (hide `explicit == true` tracks)
+- [x] SECTION 2.1 - Explicit Content: Explicit content filter toggle (hide `explicit == true` tracks) and [E] badge indicator
 - [x] SECTION 2.2 - Autoplay: Autoplay toggle switch in Settings and automatic recommendation playback (`/v1/recommendations`) on end of queue
 - [ ] SECTION 3 - Audio Quality & Library: Bitrate selector dropdown (Normal 96k, High 160k, Very High 320k bound to librespot decoder), automatic bitrate step-down on network lag, compact library view toggle, show/hide local files toggle, multi-folder source picker list with live rescanner, and external playlist import button
 - [ ] SECTION 4 - Display & Canvas: Display toggles (auto-open Now Playing on play, desktop overlay on playback controls) & Canvas/Video toggles (looping background Canvas & audio-only video fallback)
