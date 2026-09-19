@@ -20,6 +20,16 @@ pub enum NavigationItem {
     Settings,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NavDestination {
+    Home,
+    Search(String),
+    Library,
+    Settings,
+    Playlist(String),
+    Album(String),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum RightPanelTab {
@@ -227,6 +237,10 @@ pub enum AppState {
         dragging_sidebar: bool,
         dragging_right_panel: bool,
         window_width: f32,
+        navigation_history: Vec<NavDestination>,
+        forward_history: Vec<NavDestination>,
+        current_lyrics: Option<crate::api::lyrics::LyricsData>,
+        is_loading_lyrics: bool,
     },
 }
 
@@ -344,6 +358,11 @@ pub enum Message {
     PanelDragMoved(f32),
     ToggleRightPanel(RightPanelTab),
     WindowResized(f32),
+    NavigateBack,
+    NavigateForward,
+    FetchLyrics(String, String),
+    LyricsFetched(Result<crate::api::lyrics::LyricsData, AppError>),
+    SeekToMs(u32),
 }
 
 struct PlayerEventsRecipe {
@@ -388,6 +407,35 @@ impl iced::advanced::subscription::Recipe for PlayerEventsRecipe {
     }
 }
 
+fn get_current_destination(
+    nav_item: NavigationItem,
+    selected_playlist: Option<&SelectedPlaylistState>,
+    selected_album: Option<&SelectedAlbumState>,
+    search_query: &str,
+) -> NavDestination {
+    if let Some(p) = selected_playlist {
+        NavDestination::Playlist(p.id.clone())
+    } else if let Some(a) = selected_album {
+        NavDestination::Album(a.id.clone())
+    } else {
+        match nav_item {
+            NavigationItem::Search => NavDestination::Search(search_query.to_string()),
+            NavigationItem::Library => NavDestination::Library,
+            NavigationItem::Settings => NavDestination::Settings,
+            NavigationItem::Home => NavDestination::Home,
+        }
+    }
+}
+
+fn push_to_history(history: &mut Vec<NavDestination>, dest: NavDestination) {
+    if history.last() != Some(&dest) {
+        if history.len() >= 50 {
+            history.remove(0);
+        }
+        history.push(dest);
+    }
+}
+
 impl App {
     pub fn new() -> (Self, Task<Message>) {
         let audio_tx = AudioEngine::spawn();
@@ -422,7 +470,7 @@ impl App {
                 ..
             } => {
                 let mut subs = vec![];
-                if playback.is_playing {
+                if audio_session.is_none() && playback.is_playing {
                     subs.push(
                         iced::time::every(std::time::Duration::from_millis(200))
                             .map(|_| Message::PlaybackTick),
@@ -471,6 +519,169 @@ impl App {
             }
             AppState::Login { .. } => iced::Subscription::none(),
         }
+    }
+
+    fn navigate_to(&mut self, dest: NavDestination) -> Task<Message> {
+        match dest {
+            NavDestination::Home => {
+                if let AppState::Main {
+                    nav_item,
+                    selected_playlist,
+                    selected_album,
+                    ..
+                } = &mut self.state
+                {
+                    *nav_item = NavigationItem::Home;
+                    *selected_playlist = None;
+                    *selected_album = None;
+                }
+                Task::none()
+            }
+            NavDestination::Search(query) => {
+                if let AppState::Main {
+                    nav_item,
+                    selected_playlist,
+                    selected_album,
+                    ..
+                } = &mut self.state
+                {
+                    *selected_playlist = None;
+                    *selected_album = None;
+                    *nav_item = NavigationItem::Search;
+                }
+                self.update(Message::SearchInputChanged(query))
+            }
+            NavDestination::Library => {
+                if let AppState::Main {
+                    nav_item,
+                    selected_playlist,
+                    selected_album,
+                    ..
+                } = &mut self.state
+                {
+                    *nav_item = NavigationItem::Library;
+                    *selected_playlist = None;
+                    *selected_album = None;
+                }
+                Task::none()
+            }
+            NavDestination::Settings => {
+                if let AppState::Main {
+                    nav_item,
+                    selected_playlist,
+                    selected_album,
+                    ..
+                } = &mut self.state
+                {
+                    *nav_item = NavigationItem::Settings;
+                    *selected_playlist = None;
+                    *selected_album = None;
+                }
+                Task::none()
+            }
+            NavDestination::Playlist(id) => self.load_playlist_internal(&id),
+            NavDestination::Album(id) => self.load_album_internal(&id),
+        }
+    }
+
+    fn load_playlist_internal(&mut self, playlist_id: &str) -> Task<Message> {
+        if let AppState::Main {
+            user_playlists,
+            selected_playlist,
+            selected_album,
+            loaded_images,
+            spotify_client,
+            nav_item,
+            ..
+        } = &mut self.state
+        {
+            *nav_item = NavigationItem::Home;
+            *selected_album = None;
+            let (playlist_name, image_url) = user_playlists
+                .iter()
+                .find(|p| p.id == playlist_id)
+                .map_or_else(
+                    || ("Playlist".to_string(), None),
+                    |p| (p.name.clone(), p.image_url.clone()),
+                );
+
+            *selected_playlist = Some(SelectedPlaylistState {
+                id: playlist_id.to_string(),
+                name: playlist_name,
+                image_url: image_url.clone(),
+                tracks: Vec::new(),
+                is_loading: true,
+            });
+
+            let mut tasks = load_image_tasks(std::iter::once(image_url), loaded_images);
+
+            if let Some(client) = spotify_client.clone() {
+                let pid = playlist_id.to_string();
+                tasks.push(Task::perform(
+                    async move {
+                        let res = crate::api::playlist::fetch_playlist_tracks(&client, &pid).await;
+                        (pid, res)
+                    },
+                    |(pid, res)| Message::PlaylistTracksFetched(pid, res),
+                ));
+            }
+            if !tasks.is_empty() {
+                return Task::batch(tasks);
+            }
+        }
+        Task::none()
+    }
+
+    fn load_album_internal(&mut self, album_id: &str) -> Task<Message> {
+        if rspotify::model::AlbumId::from_id_or_uri(album_id).is_err() {
+            return self.update(Message::SearchInputChanged(album_id.to_string()));
+        }
+        if let AppState::Main {
+            user_albums,
+            selected_album,
+            selected_playlist,
+            spotify_client,
+            nav_item,
+            ..
+        } = &mut self.state
+        {
+            *nav_item = NavigationItem::Home;
+            *selected_playlist = None;
+            let (name, artist, image_url, release_date) =
+                user_albums.iter().find(|a| a.id == album_id).map_or_else(
+                    || ("Album".to_string(), String::new(), None, String::new()),
+                    |a| {
+                        (
+                            a.name.clone(),
+                            a.artist_name.clone(),
+                            a.image_url.clone(),
+                            a.release_date.clone(),
+                        )
+                    },
+                );
+
+            *selected_album = Some(SelectedAlbumState {
+                id: album_id.to_string(),
+                name,
+                artist_name: artist,
+                image_url,
+                release_date,
+                tracks: Vec::new(),
+                is_loading: true,
+            });
+
+            if let Some(client) = spotify_client.clone() {
+                let aid = album_id.to_string();
+                return Task::perform(
+                    async move {
+                        let res = crate::api::album::fetch_album_details(&client, &aid).await;
+                        (aid, res)
+                    },
+                    |(aid, res)| Message::AlbumDetailsFetched(aid, res),
+                );
+            }
+        }
+        Task::none()
     }
 
     #[allow(clippy::too_many_lines)]
@@ -570,6 +781,10 @@ impl App {
                     dragging_sidebar: false,
                     dragging_right_panel: false,
                     window_width: 1200.0,
+                    navigation_history: Vec::new(),
+                    forward_history: Vec::new(),
+                    current_lyrics: None,
+                    is_loading_lyrics: false,
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -863,52 +1078,25 @@ impl App {
             }
             Message::SelectPlaylist(playlist_id) => {
                 if let AppState::Main {
-                    user_playlists,
+                    nav_item,
                     selected_playlist,
                     selected_album,
-                    loaded_images,
-                    spotify_client,
-                    nav_item,
+                    search_query,
+                    navigation_history,
+                    forward_history,
                     ..
                 } = &mut self.state
                 {
-                    *nav_item = NavigationItem::Home;
-                    *selected_album = None;
-                    let (playlist_name, image_url) = user_playlists
-                        .iter()
-                        .find(|p| p.id == playlist_id)
-                        .map_or_else(
-                            || ("Playlist".to_string(), None),
-                            |p| (p.name.clone(), p.image_url.clone()),
-                        );
-
-                    *selected_playlist = Some(SelectedPlaylistState {
-                        id: playlist_id.clone(),
-                        name: playlist_name,
-                        image_url: image_url.clone(),
-                        tracks: Vec::new(),
-                        is_loading: true,
-                    });
-
-                    let mut tasks = load_image_tasks(std::iter::once(image_url), loaded_images);
-
-                    if let Some(client) = spotify_client.clone() {
-                        let pid = playlist_id.clone();
-                        tasks.push(Task::perform(
-                            async move {
-                                let res =
-                                    crate::api::playlist::fetch_playlist_tracks(&client, &pid)
-                                        .await;
-                                (pid, res)
-                            },
-                            |(pid, res)| Message::PlaylistTracksFetched(pid, res),
-                        ));
-                    }
-                    if !tasks.is_empty() {
-                        return Task::batch(tasks);
-                    }
+                    let curr = get_current_destination(
+                        *nav_item,
+                        selected_playlist.as_ref(),
+                        selected_album.as_ref(),
+                        search_query,
+                    );
+                    push_to_history(navigation_history, curr);
+                    forward_history.clear();
                 }
-                Task::none()
+                self.load_playlist_internal(&playlist_id)
             }
             Message::PlaylistTracksFetched(playlist_id, res) => {
                 let mut tasks = Vec::new();
@@ -939,52 +1127,25 @@ impl App {
             }
             Message::SelectAlbum(album_id) => {
                 if let AppState::Main {
-                    user_albums,
-                    selected_album,
-                    selected_playlist,
-                    spotify_client,
                     nav_item,
+                    selected_playlist,
+                    selected_album,
+                    search_query,
+                    navigation_history,
+                    forward_history,
                     ..
                 } = &mut self.state
                 {
-                    *nav_item = NavigationItem::Home;
-                    *selected_playlist = None;
-                    let (name, artist, image_url, release_date) =
-                        user_albums.iter().find(|a| a.id == album_id).map_or_else(
-                            || ("Album".to_string(), String::new(), None, String::new()),
-                            |a| {
-                                (
-                                    a.name.clone(),
-                                    a.artist_name.clone(),
-                                    a.image_url.clone(),
-                                    a.release_date.clone(),
-                                )
-                            },
-                        );
-
-                    *selected_album = Some(SelectedAlbumState {
-                        id: album_id.clone(),
-                        name,
-                        artist_name: artist,
-                        image_url,
-                        release_date,
-                        tracks: Vec::new(),
-                        is_loading: true,
-                    });
-
-                    if let Some(client) = spotify_client.clone() {
-                        let aid = album_id.clone();
-                        return Task::perform(
-                            async move {
-                                let res =
-                                    crate::api::album::fetch_album_details(&client, &aid).await;
-                                (aid, res)
-                            },
-                            |(aid, res)| Message::AlbumDetailsFetched(aid, res),
-                        );
-                    }
+                    let curr = get_current_destination(
+                        *nav_item,
+                        selected_playlist.as_ref(),
+                        selected_album.as_ref(),
+                        search_query,
+                    );
+                    push_to_history(navigation_history, curr);
+                    forward_history.clear();
                 }
-                Task::none()
+                self.load_album_internal(&album_id)
             }
             Message::SelectArtist(artist_name) => {
                 self.update(Message::SearchInputChanged(artist_name))
@@ -1143,7 +1304,7 @@ impl App {
             Message::ImageLoaded(res) => {
                 if let Ok((url, bytes)) = res {
                     if let AppState::Main { loaded_images, .. } = &mut self.state {
-                        if loaded_images.len() >= 64 {
+                        if loaded_images.len() >= 20 {
                             if let Some(key_to_remove) = loaded_images.keys().next().cloned() {
                                 loaded_images.remove(&key_to_remove);
                             }
@@ -1216,6 +1377,7 @@ impl App {
                             selected_album,
                             search_results,
                             loaded_images,
+                            active_right_panel,
                             ..
                         } = &mut self.state
                         {
@@ -1268,6 +1430,7 @@ impl App {
                                 ));
                             }
 
+                            let track_artist = artist.clone();
                             playback.current_track = Some(TrackInfo {
                                 title: audio_item.name.clone(),
                                 artist,
@@ -1276,6 +1439,17 @@ impl App {
                                 image_url,
                                 uri: playback.current_track_uri.clone().unwrap_or_default(),
                             });
+
+                            if *active_right_panel == Some(RightPanelTab::Lyrics) {
+                                let t_name = audio_item.name.clone();
+                                tasks.push(Task::perform(
+                                    async move {
+                                        crate::api::lyrics::fetch_lyrics(&t_name, &track_artist)
+                                            .await
+                                    },
+                                    Message::LyricsFetched,
+                                ));
+                            }
                         }
                         if !tasks.is_empty() {
                             return Task::batch(tasks);
@@ -1309,9 +1483,6 @@ impl App {
                         }
                     });
                     playback.progress_ms = pos.min(max_dur);
-                    if playback.is_playing && playback.progress_ms % 4000 < 500 {
-                        save_last_playback_state(playback);
-                    }
                 }
                 Task::none()
             }
@@ -1348,9 +1519,21 @@ impl App {
                     nav_item,
                     selected_playlist,
                     selected_album,
+                    navigation_history,
+                    forward_history,
+                    search_query,
                     ..
                 } = &mut self.state
                 {
+                    let curr = get_current_destination(
+                        *nav_item,
+                        selected_playlist.as_ref(),
+                        selected_album.as_ref(),
+                        search_query,
+                    );
+                    push_to_history(navigation_history, curr);
+                    forward_history.clear();
+
                     *nav_item = item;
                     if item == NavigationItem::Home {
                         *selected_playlist = None;
@@ -1359,13 +1542,126 @@ impl App {
                 }
                 Task::none()
             }
-            Message::TogglePlayback => {
+            Message::NavigateBack => {
+                let target = match &mut self.state {
+                    AppState::Main {
+                        nav_item,
+                        selected_playlist,
+                        selected_album,
+                        search_query,
+                        navigation_history,
+                        forward_history,
+                        ..
+                    } => {
+                        if let Some(dest) = navigation_history.pop() {
+                            let curr = get_current_destination(
+                                *nav_item,
+                                selected_playlist.as_ref(),
+                                selected_album.as_ref(),
+                                search_query,
+                            );
+                            push_to_history(forward_history, curr);
+                            Some(dest)
+                        } else {
+                            None
+                        }
+                    }
+                    AppState::Login { .. } => None,
+                };
+                if let Some(dest) = target {
+                    return self.navigate_to(dest);
+                }
+                Task::none()
+            }
+            Message::NavigateForward => {
+                let target = match &mut self.state {
+                    AppState::Main {
+                        nav_item,
+                        selected_playlist,
+                        selected_album,
+                        search_query,
+                        navigation_history,
+                        forward_history,
+                        ..
+                    } => {
+                        if let Some(dest) = forward_history.pop() {
+                            let curr = get_current_destination(
+                                *nav_item,
+                                selected_playlist.as_ref(),
+                                selected_album.as_ref(),
+                                search_query,
+                            );
+                            push_to_history(navigation_history, curr);
+                            Some(dest)
+                        } else {
+                            None
+                        }
+                    }
+                    AppState::Login { .. } => None,
+                };
+                if let Some(dest) = target {
+                    return self.navigate_to(dest);
+                }
+                Task::none()
+            }
+            Message::SeekToMs(pos_ms) => {
                 if let AppState::Main {
                     playback,
                     audio_session,
                     ..
                 } = &mut self.state
                 {
+                    playback.progress_ms = pos_ms;
+                    if let Some(session) = audio_session {
+                        let _ = session.cmd_tx.try_send(PlayerCommand::Seek(pos_ms));
+                    }
+                }
+                Task::none()
+            }
+            Message::FetchLyrics(title, artist) => {
+                if let AppState::Main {
+                    is_loading_lyrics, ..
+                } = &mut self.state
+                {
+                    *is_loading_lyrics = true;
+                }
+                Task::perform(
+                    async move { crate::api::lyrics::fetch_lyrics(&title, &artist).await },
+                    Message::LyricsFetched,
+                )
+            }
+            Message::LyricsFetched(res) => {
+                if let AppState::Main {
+                    current_lyrics,
+                    is_loading_lyrics,
+                    ..
+                } = &mut self.state
+                {
+                    *is_loading_lyrics = false;
+                    *current_lyrics = res.ok();
+                }
+                Task::none()
+            }
+            Message::TogglePlayback => {
+                if let AppState::Main {
+                    playback,
+                    audio_session,
+                    context_queue,
+                    user_queue,
+                    ..
+                } = &mut self.state
+                {
+                    if playback.current_track.is_none() {
+                        if let Some(next_track) = user_queue
+                            .first()
+                            .cloned()
+                            .or_else(|| context_queue.first().cloned())
+                        {
+                            return self.update(Message::PlayTrack(next_track.uri));
+                        }
+                        return Task::none();
+                    }
+
                     let was_playing = playback.is_playing;
                     playback.is_playing = !was_playing;
 
@@ -1376,13 +1672,6 @@ impl App {
                             PlayerCommand::Resume
                         };
                         let _ = session.cmd_tx.try_send(cmd);
-                    } else {
-                        let legacy_cmd = if playback.is_playing {
-                            AudioCommand::Play
-                        } else {
-                            AudioCommand::Pause
-                        };
-                        let _ = self.audio_tx.try_send(legacy_cmd);
                     }
                 }
                 Task::none()
@@ -2304,15 +2593,33 @@ impl App {
                 Task::none()
             }
             Message::ToggleRightPanel(tab) => {
+                let mut maybe_fetch = None;
                 if let AppState::Main {
-                    active_right_panel, ..
+                    active_right_panel,
+                    current_lyrics,
+                    playback,
+                    ..
                 } = &mut self.state
                 {
                     if *active_right_panel == Some(tab) {
                         *active_right_panel = None;
                     } else {
                         *active_right_panel = Some(tab);
+                        if tab == RightPanelTab::Lyrics {
+                            if let Some(track) = &playback.current_track {
+                                let need_fetch = match current_lyrics {
+                                    Some(l) => l.track_name != track.title,
+                                    None => true,
+                                };
+                                if need_fetch {
+                                    maybe_fetch = Some((track.title.clone(), track.artist.clone()));
+                                }
+                            }
+                        }
                     }
+                }
+                if let Some((title, artist)) = maybe_fetch {
+                    return self.update(Message::FetchLyrics(title, artist));
                 }
                 Task::none()
             }
@@ -2357,6 +2664,10 @@ impl App {
                 active_context_menu,
                 active_modal,
                 toast_notification,
+                navigation_history,
+                forward_history,
+                current_lyrics,
+                is_loading_lyrics,
                 ..
             } => crate::ui::main_layout::view(
                 nav_item,
@@ -2384,6 +2695,10 @@ impl App {
                 active_context_menu.as_ref(),
                 active_modal.as_ref(),
                 toast_notification.as_ref(),
+                !navigation_history.is_empty(),
+                !forward_history.is_empty(),
+                current_lyrics.as_ref(),
+                *is_loading_lyrics,
             ),
         };
 
