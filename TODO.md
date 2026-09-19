@@ -87,7 +87,7 @@
 - [x] SETTINGS PAGE: Build base Settings page layout frame
 - [x] LYRICS: Implement base Lyrics view layout frame
 - [x] Integrate LRCLIB REST API for millisecond-synced `.lrc` lyrics auto-scrolling with Genius plain lyrics fallback
-- [ ] Integrate Last.fm API (`artist.getInfo`) + Wikipedia REST API for artist bio, curiosities, genres, and similar artists in Now Playing right panel
+- [x] Integrate Last.fm API (`artist.getInfo`) + Wikipedia REST API for artist bio, curiosities, genres, and similar artists in Now Playing right panel
 - [ ] Implement Spotify Connect icon & interactive device selector modal/popover in bottom playback bar
 - [x] Enhance Search screen with Category Pill filters (Tracks, Albums, Artists, Playlists) and Top Result spotlight card
 - [ ] Implement Friend Activity / Social Feed side panel in right panel slot

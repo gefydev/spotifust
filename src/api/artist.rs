@@ -142,9 +142,129 @@ pub async fn unfollow_artist(
     .await
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ArtistBio {
+    pub artist_name: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub extract: String,
+}
+
+#[derive(serde::Deserialize)]
+struct WikiSummaryResponse {
+    #[serde(default)]
+    r#type: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    description: Option<String>,
+    extract: Option<String>,
+}
+
+#[allow(clippy::missing_errors_doc)]
+pub async fn fetch_artist_bio(artist_name: &str) -> Result<ArtistBio, AppError> {
+    let trimmed = artist_name.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Network("Empty artist name".to_string()));
+    }
+
+    let mut candidates = vec![
+        trimmed.to_string(),
+        format!("{trimmed} (band)"),
+        format!("{trimmed} (musician)"),
+    ];
+
+    if let Some(primary) = trimmed.split(&[',', '&', '/'][..]).next() {
+        let primary_trimmed = primary.trim();
+        if !primary_trimmed.is_empty() && primary_trimmed != trimmed {
+            candidates.push(primary_trimmed.to_string());
+            candidates.push(format!("{primary_trimmed} (band)"));
+            candidates.push(format!("{primary_trimmed} (musician)"));
+        }
+    }
+
+    let client = reqwest::Client::new();
+
+    for candidate in &candidates {
+        let mut url = reqwest::Url::parse("https://en.wikipedia.org/api/rest_v1/page/summary/")
+            .map_err(|e| AppError::Network(format!("Failed to parse wiki URL: {e}")))?;
+
+        let path_candidate = candidate.replace(' ', "_");
+        if let Ok(mut segments) = url.path_segments_mut() {
+            segments.push(&path_candidate);
+        }
+
+        let resp = match client
+            .get(url)
+            .header(
+                "User-Agent",
+                "Spotifust/0.1.0 (https://github.com/gefydev/spotifust)",
+            )
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => r,
+            _ => continue,
+        };
+
+        if let Ok(body) = resp.json::<WikiSummaryResponse>().await {
+            if body.r#type.as_deref() == Some("disambiguation") {
+                continue;
+            }
+            if let Some(extract) = body.extract {
+                let trimmed_extract = extract.trim();
+                if !trimmed_extract.is_empty() {
+                    return Ok(ArtistBio {
+                        artist_name: trimmed.to_string(),
+                        title: body.title.unwrap_or_else(|| candidate.clone()),
+                        description: body.description,
+                        extract: trimmed_extract.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    Err(AppError::Network(format!(
+        "No Wikipedia bio found for '{trimmed}'"
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_artist_bio_json_deserialization() {
+        let json_data = r#"{
+            "type": "standard",
+            "title": "Daft Punk",
+            "description": "French electronic music duo",
+            "extract": "Daft Punk were a French electronic music duo formed in 1993 in Paris."
+        }"#;
+        let res: Result<WikiSummaryResponse, _> = serde_json::from_str(json_data);
+        assert!(res.is_ok());
+        let body = res.unwrap();
+        assert_eq!(body.r#type.as_deref(), Some("standard"));
+        assert_eq!(body.title.as_deref(), Some("Daft Punk"));
+        assert_eq!(
+            body.description.as_deref(),
+            Some("French electronic music duo")
+        );
+        assert!(body.extract.is_some());
+    }
+
+    #[test]
+    fn test_artist_bio_disambiguation_detection() {
+        let json_data = r#"{
+            "type": "disambiguation",
+            "title": "Queen",
+            "description": "Topics referred to by the same term"
+        }"#;
+        let res: Result<WikiSummaryResponse, _> = serde_json::from_str(json_data);
+        assert!(res.is_ok());
+        let body = res.unwrap();
+        assert_eq!(body.r#type.as_deref(), Some("disambiguation"));
+    }
 
     #[test]
     fn test_artist_detail_struct() {
