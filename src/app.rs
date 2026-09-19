@@ -251,7 +251,7 @@ pub enum AppState {
         active_context_menu: Option<ContextMenuState>,
         active_modal: Option<ActiveModal>,
         toast_notification: Option<String>,
-        loaded_images: std::collections::HashMap<String, iced::widget::image::Handle>,
+        loaded_images: crate::api::cache::LruCache<String, iced::widget::image::Handle>,
         spotify_client: Option<Arc<rspotify::AuthCodePkceSpotify>>,
         sidebar_width: f32,
         right_panel_width: f32,
@@ -870,7 +870,7 @@ impl App {
                     active_context_menu: None,
                     active_modal: None,
                     toast_notification: None,
-                    loaded_images: std::collections::HashMap::new(),
+                    loaded_images: crate::api::cache::LruCache::new(20),
                     spotify_client: Some(Arc::clone(&spotify_arc)),
                     sidebar_width: sw,
                     right_panel_width: rw,
@@ -1415,11 +1415,6 @@ impl App {
             Message::ImageLoaded(res) => {
                 if let Ok((url, bytes)) = res {
                     if let AppState::Main { loaded_images, .. } = &mut self.state {
-                        if loaded_images.len() >= 20 {
-                            if let Some(key_to_remove) = loaded_images.keys().next().cloned() {
-                                loaded_images.remove(&key_to_remove);
-                            }
-                        }
                         loaded_images.insert(url, iced::widget::image::Handle::from_bytes(bytes));
                     }
                 }
@@ -2971,7 +2966,7 @@ impl App {
                 user_queue,
                 context_queue,
                 *context_index,
-                loaded_images,
+                loaded_images.inner_map(),
                 *window_width,
                 active_context_menu.as_ref(),
                 active_modal.as_ref(),
@@ -3095,7 +3090,7 @@ pub fn load_layout() -> (f32, f32) {
 
 fn load_image_tasks(
     urls: impl IntoIterator<Item = Option<String>>,
-    loaded_images: &std::collections::HashMap<String, iced::widget::image::Handle>,
+    loaded_images: &crate::api::cache::LruCache<String, iced::widget::image::Handle>,
 ) -> Vec<Task<Message>> {
     let mut tasks = Vec::new();
     for url in urls.into_iter().flatten() {
