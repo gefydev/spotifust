@@ -87,6 +87,8 @@ pub fn view<'a>(
     can_go_forward: bool,
     current_lyrics: Option<&'a crate::api::lyrics::LyricsData>,
     is_loading_lyrics: bool,
+    current_artist_bio: Option<&'a crate::api::artist::ArtistBio>,
+    is_loading_artist_bio: bool,
     autoplay_enabled: bool,
     search_category_filter: SearchCategoryFilter,
     cache_size_bytes: u64,
@@ -142,6 +144,8 @@ pub fn view<'a>(
         loaded_images,
         current_lyrics,
         is_loading_lyrics,
+        current_artist_bio,
+        is_loading_artist_bio,
     );
     let playback_bar = view_playback_bar(playback, active_right_panel, loaded_images);
 
@@ -1509,6 +1513,8 @@ fn view_right_panel<'a>(
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
     current_lyrics: Option<&'a crate::api::lyrics::LyricsData>,
     is_loading_lyrics: bool,
+    current_artist_bio: Option<&'a crate::api::artist::ArtistBio>,
+    is_loading_artist_bio: bool,
 ) -> Element<'a, Message> {
     let Some(tab) = active_tab else {
         return Container::new(Space::new()).into();
@@ -1681,42 +1687,68 @@ fn view_right_panel<'a>(
                 .size(14)
                 .color(theme::TEXT_SECONDARY);
 
-            let artist_card = Container::new(
-                Column::new()
-                    .spacing(8)
-                    .push(
-                        Text::new("About the artist")
-                            .size(14)
+            let mut artist_card_col = Column::new().spacing(8).push(
+                Text::new("About the artist")
+                    .size(14)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(theme::TEXT_PRIMARY),
+            );
+
+            if is_loading_artist_bio {
+                artist_card_col = artist_card_col.push(
+                    Text::new("Loading artist biography...")
+                        .size(12)
+                        .color(theme::TEXT_MUTED),
+                );
+            } else if let Some(bio) = current_artist_bio {
+                if let Some(desc) = &bio.description {
+                    artist_card_col = artist_card_col.push(
+                        Text::new(desc)
+                            .size(13)
                             .font(iced::Font {
-                                weight: iced::font::Weight::Bold,
+                                weight: iced::font::Weight::Medium,
                                 ..Default::default()
                             })
-                            .color(theme::TEXT_PRIMARY),
-                    )
-                    .push(
-                        Text::new("Spotifust is a high-performance, single-binary Rust client built for extreme speed and low RAM footprint.")
-                            .size(12)
-                            .color(theme::TEXT_SECONDARY),
-                    ),
-            )
-            .padding(16)
-            .style(|_theme| container::Style {
-                background: Some(Background::Color(theme::SURFACE_CARD)),
-                border: Border {
-                    radius: theme::RADIUS_MD.into(),
-                    color: theme::BORDER_SUBTLE,
-                    width: 1.0,
-                },
-                ..Default::default()
-            });
+                            .color(theme::ACCENT),
+                    );
+                }
+                artist_card_col = artist_card_col.push(
+                    Text::new(&bio.extract)
+                        .size(12)
+                        .color(theme::TEXT_SECONDARY),
+                );
+            } else {
+                artist_card_col = artist_card_col.push(
+                    Text::new("Artist biography unavailable.")
+                        .size(12)
+                        .color(theme::TEXT_MUTED),
+                );
+            }
 
-            Column::new()
+            let artist_card = Container::new(artist_card_col)
+                .padding(16)
+                .width(Length::Fill)
+                .style(|_theme| container::Style {
+                    background: Some(Background::Color(theme::SURFACE_CARD)),
+                    border: Border {
+                        radius: theme::RADIUS_MD.into(),
+                        color: theme::BORDER_SUBTLE,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                });
+
+            let content = Column::new()
                 .spacing(16)
                 .push(art_placeholder)
                 .push(track_title)
                 .push(artist_name)
-                .push(artist_card)
-                .into()
+                .push(artist_card);
+
+            Scrollable::new(content).height(Length::Fill).into()
         }
         RightPanelTab::Queue => {
             let current_header = Text::new("Now Playing")

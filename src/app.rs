@@ -279,6 +279,8 @@ pub enum AppState {
         forward_history: Vec<NavDestination>,
         current_lyrics: Option<crate::api::lyrics::LyricsData>,
         is_loading_lyrics: bool,
+        current_artist_bio: Option<crate::api::artist::ArtistBio>,
+        is_loading_artist_bio: bool,
         autoplay_enabled: bool,
         search_category_filter: SearchCategoryFilter,
         cache_size_bytes: u64,
@@ -405,6 +407,8 @@ pub enum Message {
     NavigateForward,
     FetchLyrics(String, String),
     LyricsFetched(Result<crate::api::lyrics::LyricsData, AppError>),
+    FetchArtistBio(String),
+    ArtistBioFetched(Result<crate::api::artist::ArtistBio, AppError>),
     SeekToMs(u32),
     ToggleAutoplay,
     AutoplayRecommendationsFetched(Result<Vec<crate::api::tracks::TopTrack>, AppError>),
@@ -902,6 +906,8 @@ impl App {
                     forward_history: Vec::new(),
                     current_lyrics: None,
                     is_loading_lyrics: false,
+                    current_artist_bio: None,
+                    is_loading_artist_bio: false,
                     autoplay_enabled: true,
                     search_category_filter: SearchCategoryFilter::All,
                     cache_size_bytes: 0,
@@ -1569,12 +1575,23 @@ impl App {
 
                             if *active_right_panel == Some(RightPanelTab::Lyrics) {
                                 let t_name = audio_item.name.clone();
+                                let a_name_lyrics = track_artist.clone();
                                 tasks.push(Task::perform(
                                     async move {
-                                        crate::api::lyrics::fetch_lyrics(&t_name, &track_artist)
+                                        crate::api::lyrics::fetch_lyrics(&t_name, &a_name_lyrics)
                                             .await
                                     },
                                     Message::LyricsFetched,
+                                ));
+                            }
+
+                            if *active_right_panel == Some(RightPanelTab::NowPlaying) {
+                                let a_name_bio = track_artist.clone();
+                                tasks.push(Task::perform(
+                                    async move {
+                                        crate::api::artist::fetch_artist_bio(&a_name_bio).await
+                                    },
+                                    Message::ArtistBioFetched,
                                 ));
                             }
                         }
@@ -1772,6 +1789,31 @@ impl App {
                 {
                     *is_loading_lyrics = false;
                     *current_lyrics = res.ok();
+                }
+                Task::none()
+            }
+            Message::FetchArtistBio(artist_name) => {
+                if let AppState::Main {
+                    is_loading_artist_bio,
+                    ..
+                } = &mut self.state
+                {
+                    *is_loading_artist_bio = true;
+                }
+                Task::perform(
+                    async move { crate::api::artist::fetch_artist_bio(&artist_name).await },
+                    Message::ArtistBioFetched,
+                )
+            }
+            Message::ArtistBioFetched(res) => {
+                if let AppState::Main {
+                    current_artist_bio,
+                    is_loading_artist_bio,
+                    ..
+                } = &mut self.state
+                {
+                    *is_loading_artist_bio = false;
+                    *current_artist_bio = res.ok();
                 }
                 Task::none()
             }
@@ -2749,9 +2791,11 @@ impl App {
             }
             Message::ToggleRightPanel(tab) => {
                 let mut maybe_fetch = None;
+                let mut maybe_fetch_bio = None;
                 if let AppState::Main {
                     active_right_panel,
                     current_lyrics,
+                    current_artist_bio,
                     playback,
                     ..
                 } = &mut self.state
@@ -2770,11 +2814,24 @@ impl App {
                                     maybe_fetch = Some((track.title.clone(), track.artist.clone()));
                                 }
                             }
+                        } else if tab == RightPanelTab::NowPlaying {
+                            if let Some(track) = &playback.current_track {
+                                let need_fetch = match current_artist_bio {
+                                    Some(b) => b.artist_name != track.artist,
+                                    None => true,
+                                };
+                                if need_fetch {
+                                    maybe_fetch_bio = Some(track.artist.clone());
+                                }
+                            }
                         }
                     }
                 }
                 if let Some((title, artist)) = maybe_fetch {
                     return self.update(Message::FetchLyrics(title, artist));
+                }
+                if let Some(artist) = maybe_fetch_bio {
+                    return self.update(Message::FetchArtistBio(artist));
                 }
                 Task::none()
             }
@@ -2979,6 +3036,8 @@ impl App {
                 forward_history,
                 current_lyrics,
                 is_loading_lyrics,
+                current_artist_bio,
+                is_loading_artist_bio,
                 autoplay_enabled,
                 search_category_filter,
                 cache_size_bytes,
@@ -3015,6 +3074,8 @@ impl App {
                 !forward_history.is_empty(),
                 current_lyrics.as_ref(),
                 *is_loading_lyrics,
+                current_artist_bio.as_ref(),
+                *is_loading_artist_bio,
                 *autoplay_enabled,
                 *search_category_filter,
                 *cache_size_bytes,
