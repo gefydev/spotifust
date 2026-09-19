@@ -1,4 +1,4 @@
-use crate::api::auth::with_auto_reauth;
+use crate::api::auth::{map_rspotify_error, with_auto_reauth};
 use crate::error::AppError;
 use rspotify::{AuthCodePkceSpotify, clients::OAuthClient};
 
@@ -14,10 +14,7 @@ pub struct UserProfile {
 #[allow(clippy::missing_errors_doc)]
 pub async fn fetch_user_profile(spotify: &AuthCodePkceSpotify) -> Result<UserProfile, AppError> {
     with_auto_reauth(spotify, || async {
-        let user = spotify
-            .current_user()
-            .await
-            .map_err(|e| AppError::Network(format!("Failed to fetch user profile: {e}")))?;
+        let user = spotify.current_user().await.map_err(map_rspotify_error)?;
 
         let display_name = user
             .display_name

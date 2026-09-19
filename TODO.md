@@ -58,7 +58,7 @@
 - [x] Fetch currently playing track via `/me/player/currently-playing` on startup and sync UI state
 - [x] Implement album art fetching: download cover images asynchronously and cache to disk in `src/api/cache.rs`
 - [x] Implement a metadata cache layer in `src/api/cache.rs` to avoid redundant API calls (TTL-based)
-- [ ] Implement rate-limit handling: respect `Retry-After` headers from the Spotify API
+- [x] Implement rate-limit handling: respect `Retry-After` headers from the Spotify API
 - [x] Display large cover art in playlist and album detail header views
 - [ ] Audit and remove all remaining mock data across all UI views and components, fetching 100% live Spotify API data
 - [ ] Optimize long playlist loading with incremental chunking/streaming or virtualized pagination to avoid UI lag

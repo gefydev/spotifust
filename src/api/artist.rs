@@ -1,4 +1,4 @@
-use crate::api::auth::with_auto_reauth;
+use crate::api::auth::{map_rspotify_error, with_auto_reauth};
 use crate::error::AppError;
 use rspotify::model::{ArtistId, Market};
 use rspotify::prelude::Id;
@@ -45,12 +45,12 @@ pub async fn fetch_artist_details(
         let full_artist = spotify
             .artist(aid.clone())
             .await
-            .map_err(|e| AppError::Network(format!("Failed to fetch artist profile: {e}")))?;
+            .map_err(map_rspotify_error)?;
 
         let top_tracks_raw = spotify
             .artist_top_tracks(aid.clone(), Some(Market::FromToken))
             .await
-            .map_err(|e| AppError::Network(format!("Failed to fetch artist top tracks: {e}")))?;
+            .map_err(map_rspotify_error)?;
 
         let mut top_tracks = Vec::new();
         for t in top_tracks_raw {
@@ -69,7 +69,7 @@ pub async fn fetch_artist_details(
         let albums_page = spotify
             .artist_albums_manual(aid.clone(), None, None, Some(20), Some(0))
             .await
-            .map_err(|e| AppError::Network(format!("Failed to fetch artist albums: {e}")))?;
+            .map_err(map_rspotify_error)?;
 
         let mut albums = Vec::new();
         for a in albums_page.items {
@@ -114,7 +114,7 @@ pub async fn follow_artist(spotify: &AuthCodePkceSpotify, artist_id: &str) -> Re
         spotify
             .user_follow_artists([aid.clone()])
             .await
-            .map_err(|e| AppError::Network(format!("Failed to follow artist: {e}")))?;
+            .map_err(map_rspotify_error)?;
         Ok(())
     })
     .await
@@ -136,7 +136,7 @@ pub async fn unfollow_artist(
         spotify
             .user_unfollow_artists([aid.clone()])
             .await
-            .map_err(|e| AppError::Network(format!("Failed to unfollow artist: {e}")))?;
+            .map_err(map_rspotify_error)?;
         Ok(())
     })
     .await

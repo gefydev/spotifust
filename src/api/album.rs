@@ -1,4 +1,4 @@
-use crate::api::auth::with_auto_reauth;
+use crate::api::auth::{map_rspotify_error, with_auto_reauth};
 use crate::error::AppError;
 use rspotify::{AuthCodePkceSpotify, clients::OAuthClient};
 
@@ -26,9 +26,7 @@ pub async fn fetch_saved_albums(
             let page = spotify
                 .current_user_saved_albums_manual(None, Some(limit), Some(offset))
                 .await
-                .map_err(|e| {
-                    AppError::Network(format!("Failed to fetch saved albums page: {e}"))
-                })?;
+                .map_err(map_rspotify_error)?;
 
             let page_count = page.items.len();
             let has_next = page.next.is_some();
@@ -81,7 +79,7 @@ pub async fn fetch_new_releases(
         let page = spotify
             .new_releases_manual(None, Some(10), Some(0))
             .await
-            .map_err(|e| AppError::Network(format!("Failed to fetch new releases: {e}")))?;
+            .map_err(map_rspotify_error)?;
 
         let mut albums = Vec::new();
         for full_album in page.items {
@@ -149,7 +147,7 @@ pub async fn fetch_album_details(
         let full_album = spotify
             .album(aid.clone(), None)
             .await
-            .map_err(|e| AppError::Network(format!("Failed to fetch album details: {e}")))?;
+            .map_err(map_rspotify_error)?;
 
         let artist_name = full_album
             .artists
@@ -213,7 +211,7 @@ pub async fn save_album(spotify: &AuthCodePkceSpotify, album_id: &str) -> Result
         spotify
             .current_user_saved_albums_add([a_id.clone()])
             .await
-            .map_err(|e| AppError::Network(format!("Failed to save album: {e}")))?;
+            .map_err(map_rspotify_error)?;
         Ok(())
     })
     .await
@@ -233,7 +231,7 @@ pub async fn remove_album(spotify: &AuthCodePkceSpotify, album_id: &str) -> Resu
         spotify
             .current_user_saved_albums_delete([a_id.clone()])
             .await
-            .map_err(|e| AppError::Network(format!("Failed to remove album: {e}")))?;
+            .map_err(map_rspotify_error)?;
         Ok(())
     })
     .await

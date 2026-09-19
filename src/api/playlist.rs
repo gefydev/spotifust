@@ -1,4 +1,4 @@
-use crate::api::auth::with_auto_reauth;
+use crate::api::auth::{map_rspotify_error, with_auto_reauth};
 use crate::error::AppError;
 use rspotify::prelude::Id;
 use rspotify::{AuthCodePkceSpotify, clients::BaseClient, clients::OAuthClient};
@@ -26,7 +26,7 @@ pub async fn fetch_user_playlists(
             let page = spotify
                 .current_user_playlists_manual(Some(limit), Some(offset))
                 .await
-                .map_err(|e| AppError::Network(format!("Failed to fetch playlists page: {e}")))?;
+                .map_err(map_rspotify_error)?;
 
             let page_count = page.items.len();
             let has_next = page.next.is_some();
@@ -72,7 +72,7 @@ pub async fn fetch_featured_playlists(
         let page = spotify
             .featured_playlists(None, None, None, Some(10), Some(0))
             .await
-            .map_err(|e| AppError::Network(format!("Failed to fetch featured playlists: {e}")))?;
+            .map_err(map_rspotify_error)?;
 
         let mut playlists = Vec::new();
         for item in page.playlists.items {
@@ -129,9 +129,7 @@ pub async fn fetch_playlist_tracks(
             let page = spotify
                 .playlist_items_manual(pid.clone(), None, None, Some(limit), Some(offset))
                 .await
-                .map_err(|e| {
-                    AppError::Network(format!("Failed to fetch playlist tracks page: {e}"))
-                })?;
+                .map_err(map_rspotify_error)?;
 
             let page_count = page.items.len();
             let has_next = page.next.is_some();
@@ -213,7 +211,7 @@ pub async fn add_tracks_to_playlist(
         spotify
             .playlist_add_items(p_id.clone(), playables.clone(), None)
             .await
-            .map_err(|e| AppError::Network(format!("Failed to add tracks to playlist: {e}")))?;
+            .map_err(map_rspotify_error)?;
         Ok(())
     })
     .await
@@ -249,9 +247,7 @@ pub async fn remove_tracks_from_playlist(
         spotify
             .playlist_remove_all_occurrences_of_items(p_id.clone(), playables.clone(), None)
             .await
-            .map_err(|e| {
-                AppError::Network(format!("Failed to remove tracks from playlist: {e}"))
-            })?;
+            .map_err(map_rspotify_error)?;
         Ok(())
     })
     .await
@@ -276,7 +272,7 @@ pub async fn change_playlist_details(
         spotify
             .playlist_change_detail(p_id.clone(), name, public, description, None)
             .await
-            .map_err(|e| AppError::Network(format!("Failed to update playlist details: {e}")))?;
+            .map_err(map_rspotify_error)?;
         Ok(())
     })
     .await
@@ -299,7 +295,7 @@ pub async fn delete_playlist(
         spotify
             .playlist_unfollow(p_id.clone())
             .await
-            .map_err(|e| AppError::Network(format!("Failed to delete playlist: {e}")))?;
+            .map_err(map_rspotify_error)?;
         Ok(())
     })
     .await
