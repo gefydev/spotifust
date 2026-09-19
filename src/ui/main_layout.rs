@@ -3397,3 +3397,39 @@ pub fn calculate_progress_ratio(progress_ms: u32, duration_ms: u32) -> f32 {
         0.0
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::float_cmp)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_duration_zero() {
+        assert_eq!(format_duration(0), "0:00");
+    }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        assert_eq!(format_duration(45_000), "0:45");
+    }
+
+    #[test]
+    fn test_format_duration_minutes_and_seconds() {
+        assert_eq!(format_duration(225_000), "3:45");
+    }
+
+    #[test]
+    fn test_calculate_progress_ratio_zero_duration() {
+        assert_eq!(calculate_progress_ratio(5000, 0), 0.0);
+    }
+
+    #[test]
+    fn test_calculate_progress_ratio_halfway() {
+        assert_eq!(calculate_progress_ratio(50_000, 100_000), 0.5);
+    }
+
+    #[test]
+    fn test_calculate_progress_ratio_clamped() {
+        assert_eq!(calculate_progress_ratio(150_000, 100_000), 1.0);
+    }
+}

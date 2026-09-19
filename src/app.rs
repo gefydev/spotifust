@@ -2840,3 +2840,91 @@ fn shuffle_slice<T>(slice: &mut [T]) {
         slice.swap(i, j);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_current_destination_nav_items() {
+        assert_eq!(
+            get_current_destination(NavigationItem::Home, None, None, ""),
+            NavDestination::Home
+        );
+        assert_eq!(
+            get_current_destination(NavigationItem::Search, None, None, "daft punk"),
+            NavDestination::Search("daft punk".to_string())
+        );
+        assert_eq!(
+            get_current_destination(NavigationItem::Library, None, None, ""),
+            NavDestination::Library
+        );
+        assert_eq!(
+            get_current_destination(NavigationItem::Settings, None, None, ""),
+            NavDestination::Settings
+        );
+    }
+
+    #[test]
+    fn test_get_current_destination_playlist_priority() {
+        let playlist = SelectedPlaylistState {
+            id: "pl123".to_string(),
+            name: "Favorites".to_string(),
+            image_url: None,
+            tracks: Vec::new(),
+            is_loading: false,
+        };
+        assert_eq!(
+            get_current_destination(NavigationItem::Home, Some(&playlist), None, ""),
+            NavDestination::Playlist("pl123".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_current_destination_album_priority() {
+        let album = SelectedAlbumState {
+            id: "alb456".to_string(),
+            name: "Discovery".to_string(),
+            artist_name: "Daft Punk".to_string(),
+            image_url: None,
+            release_date: "2001-03-12".to_string(),
+            tracks: Vec::new(),
+            is_loading: false,
+        };
+        assert_eq!(
+            get_current_destination(NavigationItem::Home, None, Some(&album), ""),
+            NavDestination::Album("alb456".to_string())
+        );
+    }
+
+    #[test]
+    fn test_push_to_history_dedup() {
+        let mut history = Vec::new();
+        push_to_history(&mut history, NavDestination::Home);
+        push_to_history(&mut history, NavDestination::Home);
+        assert_eq!(history.len(), 1);
+        push_to_history(&mut history, NavDestination::Library);
+        assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    fn test_push_to_history_cap_at_50() {
+        let mut history = Vec::new();
+        for i in 0..60 {
+            push_to_history(&mut history, NavDestination::Search(format!("query_{i}")));
+        }
+        assert_eq!(history.len(), 50);
+        assert_eq!(history[0], NavDestination::Search("query_10".to_string()));
+        assert_eq!(history[49], NavDestination::Search("query_59".to_string()));
+    }
+
+    #[test]
+    fn test_shuffle_slice_preserves_elements() {
+        let mut original = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let mut shuffled = original.clone();
+        shuffle_slice(&mut shuffled);
+        shuffled.sort_unstable();
+        original.sort_unstable();
+        assert_eq!(original, shuffled);
+    }
+}
