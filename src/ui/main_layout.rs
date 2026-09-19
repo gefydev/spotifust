@@ -89,6 +89,7 @@ pub fn view<'a>(
     is_loading_lyrics: bool,
     autoplay_enabled: bool,
     search_category_filter: SearchCategoryFilter,
+    cache_size_bytes: u64,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
@@ -125,6 +126,7 @@ pub fn view<'a>(
         loaded_images,
         autoplay_enabled,
         search_category_filter,
+        cache_size_bytes,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -638,9 +640,10 @@ fn view_main_content<'a>(
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
     autoplay_enabled: bool,
     search_category_filter: SearchCategoryFilter,
+    cache_size_bytes: u64,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
-        return view_settings_page(autoplay_enabled);
+        return view_settings_page(autoplay_enabled, cache_size_bytes);
     }
 
     if current_nav == NavigationItem::Search {
@@ -3370,7 +3373,7 @@ fn render_skeleton_quick_grid<'a>() -> Element<'a, Message> {
 }
 
 #[allow(clippy::too_many_lines, clippy::items_after_statements)]
-fn view_settings_page<'a>(autoplay_enabled: bool) -> Element<'a, Message> {
+fn view_settings_page<'a>(autoplay_enabled: bool, cache_size_bytes: u64) -> Element<'a, Message> {
     fn setting_row<'a>(
         title: &'static str,
         desc: &'static str,
@@ -3575,6 +3578,63 @@ fn view_settings_page<'a>(autoplay_enabled: bool) -> Element<'a, Message> {
             "Spotify Connect",
             "Control playback across your phone, tablet, and web player.",
             make_badge_enabled(),
+        ));
+
+    let cache_control = Row::new()
+        .spacing(12)
+        .align_y(Alignment::Center)
+        .push(
+            Container::new(
+                Text::new(crate::api::cache::format_bytes(cache_size_bytes))
+                    .size(13)
+                    .color(theme::TEXT_SECONDARY),
+            )
+            .padding([6, 12])
+            .style(|_theme: &Theme| container::Style {
+                background: Some(Background::Color(theme::SURFACE_HOVER)),
+                border: Border {
+                    color: theme::BORDER_SUBTLE,
+                    width: 1.0,
+                    radius: theme::RADIUS_MD.into(),
+                },
+                ..Default::default()
+            }),
+        )
+        .push(
+            Button::new(
+                Text::new("Clear Cache")
+                    .size(12)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(theme::TEXT_PRIMARY),
+            )
+            .padding([6, 14])
+            .on_press(Message::ClearCacheRequested)
+            .style(|_theme, status| {
+                let bg = match status {
+                    iced::widget::button::Status::Hovered => theme::SURFACE_HOVER,
+                    _ => theme::SURFACE_CARD,
+                };
+                iced::widget::button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        color: theme::BORDER_SUBTLE,
+                        width: 1.0,
+                        radius: theme::RADIUS_MD.into(),
+                    },
+                    ..Default::default()
+                }
+            }),
+        );
+
+    let main_col = main_col
+        .push(section_title("Storage & Cache"))
+        .push(setting_row(
+            "Cache Storage",
+            "Local disk space used for cached album artwork, fragments, and metadata.",
+            cache_control.into(),
         ));
 
     Scrollable::new(

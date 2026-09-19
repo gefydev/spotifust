@@ -132,7 +132,6 @@ impl DiskMetadataCache {
         Ok(())
     }
 
-    /// Loads a deserializable data structure from disk cache under the given key name.
     #[must_use]
     pub fn load<T: serde::de::DeserializeOwned>(key: &str) -> Option<T> {
         let file_path = get_cache_dir().join("metadata").join(format!("{key}.json"));
@@ -141,6 +140,60 @@ impl DiskMetadataCache {
         }
         let json_str = fs::read_to_string(file_path).ok()?;
         serde_json::from_str(&json_str).ok()
+    }
+}
+
+#[must_use]
+pub fn calculate_cache_size_bytes() -> u64 {
+    let dir = get_cache_dir();
+    calculate_dir_size(&dir)
+}
+
+fn calculate_dir_size(path: &std::path::Path) -> u64 {
+    let mut total_size = 0;
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_dir() {
+                    total_size += calculate_dir_size(&entry.path());
+                } else {
+                    total_size += metadata.len();
+                }
+            }
+        }
+    }
+    total_size
+}
+
+#[allow(clippy::missing_errors_doc)]
+pub fn clear_cache_disk() -> Result<u64, AppError> {
+    let dir = get_cache_dir();
+    let freed_bytes = calculate_dir_size(&dir);
+    if dir.exists() {
+        fs::remove_dir_all(&dir)
+            .map_err(|e| AppError::Cache(format!("Failed to remove cache directory: {e}")))?;
+        fs::create_dir_all(&dir)
+            .map_err(|e| AppError::Cache(format!("Failed to recreate cache directory: {e}")))?;
+    }
+    Ok(freed_bytes)
+}
+
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
+pub fn format_bytes(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+
+    let bytes_f = bytes as f64;
+    if bytes_f >= GB {
+        format!("{:.1} GB", bytes_f / GB)
+    } else if bytes_f >= MB {
+        format!("{:.1} MB", bytes_f / MB)
+    } else if bytes_f >= KB {
+        format!("{:.1} KB", bytes_f / KB)
+    } else {
+        format!("{bytes} B")
     }
 }
 
@@ -185,5 +238,25 @@ mod tests {
     fn test_get_cache_dir() {
         let dir = get_cache_dir();
         assert!(dir.to_string_lossy().contains("spotifust"));
+    }
+
+    #[test]
+    fn test_format_bytes() {
+        assert_eq!(format_bytes(500), "500 B");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024 * 2), "2.0 GB");
+    }
+
+    #[test]
+    fn test_calculate_dir_size() {
+        let temp_dir = std::env::temp_dir().join("spotifust_test_size");
+        let _ = fs::remove_dir_all(&temp_dir);
+        let _ = fs::create_dir_all(&temp_dir);
+        let test_file = temp_dir.join("test.bin");
+        let _ = fs::write(&test_file, [0u8; 100]);
+        let size = calculate_dir_size(&temp_dir);
+        assert_eq!(size, 100);
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
