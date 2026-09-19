@@ -78,7 +78,7 @@
 - [ ] Implement smooth progress bar animation that interpolates position between tick updates
 - [x] Redesign context menus (right-click) into compact Spotify-styled popovers with accurate ID routing and no redundant clunky options
 - [x] Implement a proper volume slider that covers the full 0–100% range with a mute toggle
-- [x] Add keyboard shortcuts for Play/Pause (Space), Skip (→/←), Volume (↑/↓)
+- [x] Add keyboard shortcuts for Play/Pause (Space), Skip (→/←), Volume (↑/↓), Search (Ctrl+F), Mute (Ctrl+M), Shuffle (Ctrl+S), Repeat (Ctrl+R), Queue (Ctrl+Q), Lyrics (Ctrl+D), Back/Forward (Ctrl/Alt + ←/→)
 - [x] Implement a mini-player / compact mode for when the window is resized to small dimensions
 - [ ] Implement drag-and-drop track reordering within a playlist queue view
 - [x] Add toast / snackbar notifications for user-facing errors and confirmations

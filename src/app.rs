@@ -511,26 +511,11 @@ impl App {
                     iced::Event::Window(iced::window::Event::Resized(size)) => {
                         Some(Message::WindowResized(size.width))
                     }
-                    iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
-                        match key {
-                            iced::keyboard::Key::Named(iced::keyboard::key::Named::Space) => {
-                                Some(Message::TogglePlayback)
-                            }
-                            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowRight) => {
-                                Some(Message::SkipNext)
-                            }
-                            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowLeft) => {
-                                Some(Message::SkipPrev)
-                            }
-                            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp) => {
-                                Some(Message::AdjustVolume(0.05))
-                            }
-                            iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowDown) => {
-                                Some(Message::AdjustVolume(-0.05))
-                            }
-                            _ => None,
-                        }
-                    }
+                    iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                        key,
+                        modifiers,
+                        ..
+                    }) => map_keyboard_shortcut(&key, modifiers),
                     _ => None,
                 }));
                 iced::Subscription::batch(subs)
@@ -538,7 +523,63 @@ impl App {
             AppState::Login { .. } => iced::Subscription::none(),
         }
     }
+}
 
+fn map_keyboard_shortcut(
+    key: &iced::keyboard::Key,
+    modifiers: iced::keyboard::Modifiers,
+) -> Option<Message> {
+    use iced::keyboard::{Key, key::Named};
+
+    if modifiers.command() || modifiers.control() {
+        match key {
+            Key::Character(c) if c.eq_ignore_ascii_case("f") => {
+                return Some(Message::NavigationSelected(NavigationItem::Search));
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("m") => {
+                return Some(Message::ToggleMute);
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("s") => {
+                return Some(Message::ToggleShuffle);
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("r") => {
+                return Some(Message::ToggleRepeat);
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("q") => {
+                return Some(Message::ToggleRightPanel(RightPanelTab::Queue));
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("d") => {
+                return Some(Message::ToggleRightPanel(RightPanelTab::Lyrics));
+            }
+            Key::Named(Named::ArrowLeft) => {
+                return Some(Message::NavigateBack);
+            }
+            Key::Named(Named::ArrowRight) => {
+                return Some(Message::NavigateForward);
+            }
+            _ => {}
+        }
+    }
+
+    if modifiers.alt() {
+        match key {
+            Key::Named(Named::ArrowLeft) => return Some(Message::NavigateBack),
+            Key::Named(Named::ArrowRight) => return Some(Message::NavigateForward),
+            _ => {}
+        }
+    }
+
+    match key {
+        Key::Named(Named::Space) => Some(Message::TogglePlayback),
+        Key::Named(Named::ArrowRight) => Some(Message::SkipNext),
+        Key::Named(Named::ArrowLeft) => Some(Message::SkipPrev),
+        Key::Named(Named::ArrowUp) => Some(Message::AdjustVolume(0.05)),
+        Key::Named(Named::ArrowDown) => Some(Message::AdjustVolume(-0.05)),
+        _ => None,
+    }
+}
+
+impl App {
     fn navigate_to(&mut self, dest: NavDestination) -> Task<Message> {
         match dest {
             NavDestination::Home => {
@@ -3135,5 +3176,72 @@ mod tests {
         assert_eq!(cache_size, 5_242_880);
         cache_size = 0;
         assert_eq!(cache_size, 0);
+    }
+
+    #[test]
+    fn test_map_keyboard_shortcuts() {
+        use iced::keyboard::{Key, Modifiers, key::Named};
+
+        let no_mod = Modifiers::empty();
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Named(Named::Space), no_mod),
+            Some(Message::TogglePlayback)
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Named(Named::ArrowRight), no_mod),
+            Some(Message::SkipNext)
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Named(Named::ArrowLeft), no_mod),
+            Some(Message::SkipPrev)
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Named(Named::ArrowUp), no_mod),
+            Some(Message::AdjustVolume(v)) if (v - 0.05).abs() < f32::EPSILON
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Named(Named::ArrowDown), no_mod),
+            Some(Message::AdjustVolume(v)) if (v - (-0.05)).abs() < f32::EPSILON
+        ));
+
+        let ctrl_mod = Modifiers::CTRL;
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Character("f".into()), ctrl_mod),
+            Some(Message::NavigationSelected(NavigationItem::Search))
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Character("m".into()), ctrl_mod),
+            Some(Message::ToggleMute)
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Character("s".into()), ctrl_mod),
+            Some(Message::ToggleShuffle)
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Character("r".into()), ctrl_mod),
+            Some(Message::ToggleRepeat)
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Character("q".into()), ctrl_mod),
+            Some(Message::ToggleRightPanel(RightPanelTab::Queue))
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Named(Named::ArrowLeft), ctrl_mod),
+            Some(Message::NavigateBack)
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Named(Named::ArrowRight), ctrl_mod),
+            Some(Message::NavigateForward)
+        ));
+
+        let alt_mod = Modifiers::ALT;
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Named(Named::ArrowLeft), alt_mod),
+            Some(Message::NavigateBack)
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Named(Named::ArrowRight), alt_mod),
+            Some(Message::NavigateForward)
+        ));
     }
 }
