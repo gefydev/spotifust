@@ -252,6 +252,7 @@ pub enum AppState {
         is_loading_lyrics: bool,
         autoplay_enabled: bool,
         search_category_filter: SearchCategoryFilter,
+        cache_size_bytes: u64,
     },
 }
 
@@ -377,6 +378,9 @@ pub enum Message {
     ToggleAutoplay,
     AutoplayRecommendationsFetched(Result<Vec<crate::api::tracks::TopTrack>, AppError>),
     SearchCategoryFilterSelected(SearchCategoryFilter),
+    ClearCacheRequested,
+    CacheCleared(Result<u64, AppError>),
+    CacheSizeCalculated(u64),
 }
 
 struct PlayerEventsRecipe {
@@ -591,7 +595,10 @@ impl App {
                     *selected_playlist = None;
                     *selected_album = None;
                 }
-                Task::none()
+                Task::perform(
+                    async { crate::api::cache::calculate_cache_size_bytes() },
+                    Message::CacheSizeCalculated,
+                )
             }
             NavDestination::Playlist(id) => self.load_playlist_internal(&id),
             NavDestination::Album(id) => self.load_album_internal(&id),
@@ -801,6 +808,7 @@ impl App {
                     is_loading_lyrics: false,
                     autoplay_enabled: true,
                     search_category_filter: SearchCategoryFilter::All,
+                    cache_size_bytes: 0,
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -857,6 +865,10 @@ impl App {
                     Task::perform(
                         async move { crate::api::tracks::fetch_currently_playing(&spotify_8).await },
                         Message::CurrentlyPlayingFetched,
+                    ),
+                    Task::perform(
+                        async { crate::api::cache::calculate_cache_size_bytes() },
+                        Message::CacheSizeCalculated,
                     ),
                 ])
             }
@@ -1554,6 +1566,12 @@ impl App {
                     if item == NavigationItem::Home {
                         *selected_playlist = None;
                         *selected_album = None;
+                    }
+                    if item == NavigationItem::Settings {
+                        return Task::perform(
+                            async { crate::api::cache::calculate_cache_size_bytes() },
+                            Message::CacheSizeCalculated,
+                        );
                     }
                 }
                 Task::none()
@@ -2680,6 +2698,41 @@ impl App {
                 }
                 Task::none()
             }
+            Message::CacheSizeCalculated(bytes) => {
+                if let AppState::Main {
+                    cache_size_bytes, ..
+                } = &mut self.state
+                {
+                    *cache_size_bytes = bytes;
+                }
+                Task::none()
+            }
+            Message::ClearCacheRequested => Task::perform(
+                async { crate::api::cache::clear_cache_disk() },
+                Message::CacheCleared,
+            ),
+            Message::CacheCleared(res) => {
+                if let AppState::Main {
+                    cache_size_bytes,
+                    toast_notification,
+                    ..
+                } = &mut self.state
+                {
+                    match res {
+                        Ok(freed) => {
+                            *cache_size_bytes = 0;
+                            *toast_notification = Some(format!(
+                                "Cache cleared ({} freed)",
+                                crate::api::cache::format_bytes(freed)
+                            ));
+                        }
+                        Err(e) => {
+                            self.active_error = Some(e.to_string());
+                        }
+                    }
+                }
+                Task::none()
+            }
             Message::AutoplayRecommendationsFetched(res) => {
                 let mut tasks = Vec::new();
                 if let AppState::Main {
@@ -2777,6 +2830,7 @@ impl App {
                 is_loading_lyrics,
                 autoplay_enabled,
                 search_category_filter,
+                cache_size_bytes,
                 ..
             } => crate::ui::main_layout::view(
                 nav_item,
@@ -2810,6 +2864,7 @@ impl App {
                 *is_loading_lyrics,
                 *autoplay_enabled,
                 *search_category_filter,
+                *cache_size_bytes,
             ),
         };
 
@@ -3072,5 +3127,13 @@ mod tests {
         assert_eq!(filter, SearchCategoryFilter::Albums);
         filter = SearchCategoryFilter::Artists;
         assert_eq!(filter, SearchCategoryFilter::Artists);
+    }
+
+    #[test]
+    fn test_cache_size_update_and_clear() {
+        let mut cache_size = 1024 * 1024 * 5;
+        assert_eq!(cache_size, 5_242_880);
+        cache_size = 0;
+        assert_eq!(cache_size, 0);
     }
 }
