@@ -133,7 +133,7 @@
 - [x] Run `cargo deny check` and ensure no disallowed licenses or duplicated dependencies
 - [ ] Set up memory-leak detection in CI (Valgrind or similar) for the audio pipeline
 - [ ] Add structured logging (`tracing` crate) with configurable verbosity levels
-- [ ] Implement graceful shutdown: flush audio buffers and close the librespot session cleanly on exit
+- [x] Implement graceful shutdown: flush audio buffers and close the librespot session cleanly on exit
 - [x] RAM baseline optimization: bounded image cache handle capacity with true LRU eviction (16-24 items) to keep RAM under 25 MB ceiling
 
 ### Phase 9: Comprehensive Functional Settings System (100% Backend Wired, Zero Mockups)
