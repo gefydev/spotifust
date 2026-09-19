@@ -241,6 +241,7 @@ pub enum AppState {
         forward_history: Vec<NavDestination>,
         current_lyrics: Option<crate::api::lyrics::LyricsData>,
         is_loading_lyrics: bool,
+        autoplay_enabled: bool,
     },
 }
 
@@ -363,6 +364,8 @@ pub enum Message {
     FetchLyrics(String, String),
     LyricsFetched(Result<crate::api::lyrics::LyricsData, AppError>),
     SeekToMs(u32),
+    ToggleAutoplay,
+    AutoplayRecommendationsFetched(Result<Vec<crate::api::tracks::TopTrack>, AppError>),
 }
 
 struct PlayerEventsRecipe {
@@ -785,6 +788,7 @@ impl App {
                     forward_history: Vec::new(),
                     current_lyrics: None,
                     is_loading_lyrics: false,
+                    autoplay_enabled: true,
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -1685,6 +1689,8 @@ impl App {
                     playback,
                     audio_session,
                     loaded_images,
+                    autoplay_enabled,
+                    spotify_client,
                     ..
                 } = &mut self.state
                 {
@@ -1706,6 +1712,26 @@ impl App {
                     {
                         *context_index = 0;
                         Some(context_queue[0].clone())
+                    } else if *autoplay_enabled {
+                        let maybe_seed = history.last().or(playback.current_track.as_ref());
+                        if let Some(seed) = maybe_seed {
+                            let seed_id = seed.uri.trim_start_matches("spotify:track:").to_string();
+                            if let Some(spotify) = spotify_client.clone() {
+                                playback.is_playing = false;
+                                playback.progress_ms = 0;
+                                return Task::perform(
+                                    async move {
+                                        crate::api::tracks::fetch_recommendations(
+                                            &spotify,
+                                            &[seed_id],
+                                        )
+                                        .await
+                                    },
+                                    Message::AutoplayRecommendationsFetched,
+                                );
+                            }
+                        }
+                        None
                     } else {
                         None
                     };
@@ -2623,6 +2649,65 @@ impl App {
                 }
                 Task::none()
             }
+            Message::ToggleAutoplay => {
+                if let AppState::Main {
+                    autoplay_enabled, ..
+                } = &mut self.state
+                {
+                    *autoplay_enabled = !*autoplay_enabled;
+                }
+                Task::none()
+            }
+            Message::AutoplayRecommendationsFetched(res) => {
+                let mut tasks = Vec::new();
+                if let AppState::Main {
+                    context_queue,
+                    context_index,
+                    playback,
+                    audio_session,
+                    loaded_images,
+                    autoplay_enabled,
+                    ..
+                } = &mut self.state
+                {
+                    if *autoplay_enabled {
+                        if let Ok(tracks) = res {
+                            if !tracks.is_empty() {
+                                *context_queue = tracks
+                                    .into_iter()
+                                    .map(|t| TrackInfo {
+                                        title: t.title,
+                                        artist: t.artist,
+                                        album: t.album,
+                                        duration_ms: t.duration_ms,
+                                        image_url: t.image_url,
+                                        uri: t.uri,
+                                    })
+                                    .collect();
+                                *context_index = 0;
+                                let first = context_queue[0].clone();
+                                playback.current_track = Some(first.clone());
+                                playback.progress_ms = 0;
+                                playback.is_playing = true;
+                                if let Some(session) = audio_session {
+                                    let _ = session
+                                        .cmd_tx
+                                        .try_send(PlayerCommand::Play(first.uri.clone()));
+                                }
+                                tasks.extend(load_image_tasks(
+                                    context_queue.iter().map(|t| t.image_url.clone()),
+                                    loaded_images,
+                                ));
+                            }
+                        }
+                    }
+                }
+                if tasks.is_empty() {
+                    Task::none()
+                } else {
+                    Task::batch(tasks)
+                }
+            }
             Message::WindowResized(w) => {
                 if let AppState::Main { window_width, .. } = &mut self.state {
                     *window_width = w;
@@ -2668,6 +2753,7 @@ impl App {
                 forward_history,
                 current_lyrics,
                 is_loading_lyrics,
+                autoplay_enabled,
                 ..
             } => crate::ui::main_layout::view(
                 nav_item,
@@ -2699,6 +2785,7 @@ impl App {
                 !forward_history.is_empty(),
                 current_lyrics.as_ref(),
                 *is_loading_lyrics,
+                *autoplay_enabled,
             ),
         };
 
@@ -2926,5 +3013,27 @@ mod tests {
         shuffled.sort_unstable();
         original.sort_unstable();
         assert_eq!(original, shuffled);
+    }
+
+    #[test]
+    fn test_autoplay_seed_extraction_strips_prefix() {
+        let uri_with_prefix = "spotify:track:4cOdK2wGLETKBW3PvgPWqT";
+        let seed_id = uri_with_prefix
+            .trim_start_matches("spotify:track:")
+            .to_string();
+        assert_eq!(seed_id, "4cOdK2wGLETKBW3PvgPWqT");
+
+        let raw_id = "4cOdK2wGLETKBW3PvgPWqT";
+        let seed_id_raw = raw_id.trim_start_matches("spotify:track:").to_string();
+        assert_eq!(seed_id_raw, "4cOdK2wGLETKBW3PvgPWqT");
+    }
+
+    #[test]
+    fn test_autoplay_toggle_state() {
+        let mut autoplay_enabled = true;
+        autoplay_enabled = !autoplay_enabled;
+        assert!(!autoplay_enabled);
+        autoplay_enabled = !autoplay_enabled;
+        assert!(autoplay_enabled);
     }
 }

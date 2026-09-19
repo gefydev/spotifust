@@ -85,6 +85,7 @@ pub fn view<'a>(
     can_go_forward: bool,
     current_lyrics: Option<&'a crate::api::lyrics::LyricsData>,
     is_loading_lyrics: bool,
+    autoplay_enabled: bool,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
@@ -119,6 +120,7 @@ pub fn view<'a>(
         search_results,
         is_searching,
         loaded_images,
+        autoplay_enabled,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -630,9 +632,10 @@ fn view_main_content<'a>(
     search_results: &'a crate::api::search::SearchResults,
     is_searching: bool,
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
+    autoplay_enabled: bool,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
-        return view_settings_page();
+        return view_settings_page(autoplay_enabled);
     }
 
     if current_nav == NavigationItem::Search {
@@ -3126,7 +3129,7 @@ fn render_skeleton_quick_grid<'a>() -> Element<'a, Message> {
 }
 
 #[allow(clippy::too_many_lines, clippy::items_after_statements)]
-fn view_settings_page<'a>() -> Element<'a, Message> {
+fn view_settings_page<'a>(autoplay_enabled: bool) -> Element<'a, Message> {
     fn setting_row<'a>(
         title: &'static str,
         desc: &'static str,
@@ -3226,6 +3229,53 @@ fn view_settings_page<'a>() -> Element<'a, Message> {
         .into()
     }
 
+    fn make_toggle_badge<'a>(enabled: bool, msg: Message) -> Element<'a, Message> {
+        let (label, bg_color, text_color) = if enabled {
+            (
+                "Enabled",
+                Color {
+                    r: theme::COLOR_SUCCESS.r,
+                    g: theme::COLOR_SUCCESS.g,
+                    b: theme::COLOR_SUCCESS.b,
+                    a: 0.15,
+                },
+                theme::COLOR_SUCCESS,
+            )
+        } else {
+            (
+                "Disabled",
+                Color {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 0.05,
+                },
+                theme::TEXT_MUTED,
+            )
+        };
+        Button::new(
+            Text::new(label)
+                .size(12)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                })
+                .color(text_color),
+        )
+        .padding([6, 12])
+        .on_press(msg)
+        .style(move |_theme, _status| iced::widget::button::Style {
+            background: Some(Background::Color(bg_color)),
+            border: Border {
+                color: text_color,
+                width: 1.0,
+                radius: theme::RADIUS_PILL.into(),
+            },
+            ..Default::default()
+        })
+        .into()
+    }
+
     let path_box = Container::new(
         Text::new("/home/user/music")
             .size(13)
@@ -3245,6 +3295,12 @@ fn view_settings_page<'a>() -> Element<'a, Message> {
     let main_col = Column::new()
         .spacing(24)
         .push(header)
+        .push(section_title("Autoplay & Recommendations"))
+        .push(setting_row(
+            "Autoplay Similar Songs",
+            "Keep listening to similar recommended songs when your music or queue ends.",
+            make_toggle_badge(autoplay_enabled, Message::ToggleAutoplay),
+        ))
         .push(section_title("Audio & Streaming Quality"))
         .push(setting_row(
             "Streaming Quality",
