@@ -106,6 +106,17 @@ pub fn load_saved_volume() -> f32 {
     crate::api::cache::DiskMetadataCache::load::<f32>("saved_volume").unwrap_or(0.8)
 }
 
+pub fn save_ui_scale(scale: f32) {
+    let _ = crate::api::cache::DiskMetadataCache::save("ui_scale", &scale);
+}
+
+#[must_use]
+pub fn load_ui_scale() -> f32 {
+    crate::api::cache::DiskMetadataCache::load::<f32>("ui_scale")
+        .unwrap_or(1.0)
+        .clamp(0.70, 1.30)
+}
+
 pub fn load_last_playback_state(playback: &mut PlaybackState) {
     let saved_vol = load_saved_volume();
     playback.volume = saved_vol;
@@ -256,6 +267,7 @@ pub enum AppState {
         search_category_filter: SearchCategoryFilter,
         cache_size_bytes: u64,
         allow_explicit_content: bool,
+        ui_scale: f32,
     },
 }
 
@@ -385,6 +397,9 @@ pub enum Message {
     CacheCleared(Result<u64, AppError>),
     CacheSizeCalculated(u64),
     ToggleExplicitContent,
+    SetUiScale(f32),
+    AdjustUiScale(f32),
+    ResetUiScale,
 }
 
 struct PlayerEventsRecipe {
@@ -555,6 +570,15 @@ fn map_keyboard_shortcut(
             Key::Character(c) if c.eq_ignore_ascii_case("d") => {
                 return Some(Message::ToggleRightPanel(RightPanelTab::Lyrics));
             }
+            Key::Character(c) if c == "+" || c == "=" => {
+                return Some(Message::AdjustUiScale(0.05));
+            }
+            Key::Character(c) if c == "-" => {
+                return Some(Message::AdjustUiScale(-0.05));
+            }
+            Key::Character(c) if c == "0" => {
+                return Some(Message::ResetUiScale);
+            }
             Key::Named(Named::ArrowLeft) => {
                 return Some(Message::NavigateBack);
             }
@@ -584,6 +608,13 @@ fn map_keyboard_shortcut(
 }
 
 impl App {
+    #[must_use]
+    pub fn scale_factor(&self) -> f32 {
+        match &self.state {
+            AppState::Main { ui_scale, .. } => *ui_scale,
+            AppState::Login { .. } => 1.0,
+        }
+    }
     fn navigate_to(&mut self, dest: NavDestination) -> Task<Message> {
         match dest {
             NavDestination::Home => {
@@ -855,6 +886,7 @@ impl App {
                     search_category_filter: SearchCategoryFilter::All,
                     cache_size_bytes: 0,
                     allow_explicit_content: true,
+                    ui_scale: load_ui_scale(),
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -2852,6 +2884,27 @@ impl App {
                 }
                 Task::none()
             }
+            Message::SetUiScale(scale) => {
+                if let AppState::Main { ui_scale, .. } = &mut self.state {
+                    *ui_scale = scale.clamp(0.70, 1.30);
+                    save_ui_scale(*ui_scale);
+                }
+                Task::none()
+            }
+            Message::AdjustUiScale(delta) => {
+                if let AppState::Main { ui_scale, .. } = &mut self.state {
+                    *ui_scale = (*ui_scale + delta).clamp(0.70, 1.30);
+                    save_ui_scale(*ui_scale);
+                }
+                Task::none()
+            }
+            Message::ResetUiScale => {
+                if let AppState::Main { ui_scale, .. } = &mut self.state {
+                    *ui_scale = 1.0;
+                    save_ui_scale(1.0);
+                }
+                Task::none()
+            }
         }
     }
 
@@ -2895,6 +2948,7 @@ impl App {
                 search_category_filter,
                 cache_size_bytes,
                 allow_explicit_content,
+                ui_scale,
                 ..
             } => crate::ui::main_layout::view(
                 nav_item,
@@ -2930,6 +2984,7 @@ impl App {
                 *search_category_filter,
                 *cache_size_bytes,
                 *allow_explicit_content,
+                *ui_scale,
             ),
         };
 
@@ -3257,6 +3312,18 @@ mod tests {
             map_keyboard_shortcut(&Key::Named(Named::ArrowRight), ctrl_mod),
             Some(Message::NavigateForward)
         ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Character("+".into()), ctrl_mod),
+            Some(Message::AdjustUiScale(d)) if (d - 0.05).abs() < f32::EPSILON
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Character("-".into()), ctrl_mod),
+            Some(Message::AdjustUiScale(d)) if (d - (-0.05)).abs() < f32::EPSILON
+        ));
+        assert!(matches!(
+            map_keyboard_shortcut(&Key::Character("0".into()), ctrl_mod),
+            Some(Message::ResetUiScale)
+        ));
 
         let alt_mod = Modifiers::ALT;
         assert!(matches!(
@@ -3276,5 +3343,15 @@ mod tests {
         assert!(!allow_explicit);
         allow_explicit = !allow_explicit;
         assert!(allow_explicit);
+    }
+
+    #[test]
+    fn test_ui_scale_clamping() {
+        let min_scale = (0.50_f32).clamp(0.70, 1.30);
+        let max_scale = (1.50_f32).clamp(0.70, 1.30);
+        let normal_scale = (1.05_f32).clamp(0.70, 1.30);
+        assert!((min_scale - 0.70).abs() < f32::EPSILON);
+        assert!((max_scale - 1.30).abs() < f32::EPSILON);
+        assert!((normal_scale - 1.05).abs() < f32::EPSILON);
     }
 }

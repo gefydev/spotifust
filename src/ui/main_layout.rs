@@ -91,6 +91,7 @@ pub fn view<'a>(
     search_category_filter: SearchCategoryFilter,
     cache_size_bytes: u64,
     allow_explicit_content: bool,
+    ui_scale: f32,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
@@ -129,6 +130,7 @@ pub fn view<'a>(
         search_category_filter,
         cache_size_bytes,
         allow_explicit_content,
+        ui_scale,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -644,9 +646,15 @@ fn view_main_content<'a>(
     search_category_filter: SearchCategoryFilter,
     cache_size_bytes: u64,
     allow_explicit_content: bool,
+    ui_scale: f32,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
-        return view_settings_page(autoplay_enabled, cache_size_bytes, allow_explicit_content);
+        return view_settings_page(
+            autoplay_enabled,
+            cache_size_bytes,
+            allow_explicit_content,
+            ui_scale,
+        );
     }
 
     if current_nav == NavigationItem::Search {
@@ -3459,11 +3467,17 @@ fn render_skeleton_quick_grid<'a>() -> Element<'a, Message> {
     Column::new().spacing(12).push(row_1).push(row_2).into()
 }
 
-#[allow(clippy::too_many_lines, clippy::items_after_statements)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::items_after_statements,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 fn view_settings_page<'a>(
     autoplay_enabled: bool,
     cache_size_bytes: u64,
     allow_explicit_content: bool,
+    ui_scale: f32,
 ) -> Element<'a, Message> {
     fn setting_row<'a>(
         title: &'static str,
@@ -3726,7 +3740,123 @@ fn view_settings_page<'a>(
             }),
         );
 
+    let scale_pct = (ui_scale * 100.0).round() as u32;
+    let scale_control = Row::new()
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .push(
+            Button::new(
+                Text::new("-")
+                    .size(14)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(theme::TEXT_PRIMARY),
+            )
+            .padding([6, 12])
+            .on_press(Message::AdjustUiScale(-0.05))
+            .style(|_theme, status| {
+                let bg = match status {
+                    iced::widget::button::Status::Hovered => theme::SURFACE_HOVER,
+                    _ => theme::SURFACE_CARD,
+                };
+                iced::widget::button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        color: theme::BORDER_SUBTLE,
+                        width: 1.0,
+                        radius: theme::RADIUS_MD.into(),
+                    },
+                    ..Default::default()
+                }
+            }),
+        )
+        .push(
+            Container::new(
+                Text::new(format!("{scale_pct}%"))
+                    .size(13)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(theme::TEXT_PRIMARY),
+            )
+            .padding([6, 12])
+            .style(|_theme: &Theme| container::Style {
+                background: Some(Background::Color(theme::SURFACE_HOVER)),
+                border: Border {
+                    color: theme::BORDER_SUBTLE,
+                    width: 1.0,
+                    radius: theme::RADIUS_MD.into(),
+                },
+                ..Default::default()
+            }),
+        )
+        .push(
+            Button::new(
+                Text::new("+")
+                    .size(14)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(theme::TEXT_PRIMARY),
+            )
+            .padding([6, 12])
+            .on_press(Message::AdjustUiScale(0.05))
+            .style(|_theme, status| {
+                let bg = match status {
+                    iced::widget::button::Status::Hovered => theme::SURFACE_HOVER,
+                    _ => theme::SURFACE_CARD,
+                };
+                iced::widget::button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        color: theme::BORDER_SUBTLE,
+                        width: 1.0,
+                        radius: theme::RADIUS_MD.into(),
+                    },
+                    ..Default::default()
+                }
+            }),
+        )
+        .push(
+            Button::new(
+                Text::new("Reset")
+                    .size(12)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(theme::TEXT_MUTED),
+            )
+            .padding([6, 12])
+            .on_press(Message::ResetUiScale)
+            .style(|_theme, status| {
+                let bg = match status {
+                    iced::widget::button::Status::Hovered => theme::SURFACE_HOVER,
+                    _ => theme::SURFACE_CARD,
+                };
+                iced::widget::button::Style {
+                    background: Some(Background::Color(bg)),
+                    border: Border {
+                        color: theme::BORDER_SUBTLE,
+                        width: 1.0,
+                        radius: theme::RADIUS_MD.into(),
+                    },
+                    ..Default::default()
+                }
+            }),
+        );
+
     let main_col = main_col
+        .push(section_title("UI Scaling & Accessibility"))
+        .push(setting_row(
+            "Interface Zoom",
+            "Adjust the interface scale from 70% to 130% (shortcuts: Ctrl +, Ctrl -, Ctrl 0).",
+            scale_control.into(),
+        ))
         .push(section_title("Storage & Cache"))
         .push(setting_row(
             "Cache Storage",
