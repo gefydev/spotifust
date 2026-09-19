@@ -1,4 +1,4 @@
-use crate::api::auth::with_auto_reauth;
+use crate::api::auth::{map_rspotify_error, with_auto_reauth};
 use crate::error::AppError;
 use rspotify::prelude::Id;
 use rspotify::{AuthCodePkceSpotify, clients::OAuthClient};
@@ -23,7 +23,7 @@ pub async fn fetch_top_tracks(spotify: &AuthCodePkceSpotify) -> Result<Vec<TopTr
         let page = spotify
             .current_user_top_tracks_manual(None, Some(20), None)
             .await
-            .map_err(|e| AppError::Network(format!("Failed to fetch top tracks: {e}")))?;
+            .map_err(map_rspotify_error)?;
 
         let mut tracks = Vec::new();
         for full_track in page.items {
@@ -82,7 +82,7 @@ pub async fn fetch_currently_playing(
         let playing_context = spotify
             .current_playing(None, None::<Vec<_>>)
             .await
-            .map_err(|e| AppError::Network(format!("Failed to fetch currently playing: {e}")))?;
+            .map_err(map_rspotify_error)?;
 
         let Some(ctx) = playing_context else {
             return Ok(None);
@@ -151,7 +151,7 @@ pub async fn fetch_recommendations(
                 Some(20),
             )
             .await
-            .map_err(|e| AppError::Network(format!("Failed to fetch recommendations: {e}")))?;
+            .map_err(map_rspotify_error)?;
 
         let mut tracks = Vec::new();
         for track in recs.tracks {

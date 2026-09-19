@@ -1,4 +1,4 @@
-use crate::api::auth::with_auto_reauth;
+use crate::api::auth::{map_rspotify_error, with_auto_reauth};
 use crate::error::AppError;
 use rspotify::model::{SearchResult, SearchType};
 use rspotify::prelude::Id;
@@ -51,10 +51,12 @@ pub async fn execute_search(
     with_auto_reauth(spotify, || async {
         let mut search_results = SearchResults::default();
 
-        if let Ok(SearchResult::Tracks(tracks_page)) = spotify
+        let track_res = spotify
             .search(query, SearchType::Track, None, None, Some(10), Some(0))
             .await
-        {
+            .map_err(map_rspotify_error)?;
+
+        if let SearchResult::Tracks(tracks_page) = track_res {
             for track in tracks_page.items {
                 let artist = track
                     .artists
@@ -83,10 +85,12 @@ pub async fn execute_search(
             }
         }
 
-        if let Ok(SearchResult::Albums(albums_page)) = spotify
+        let album_res = spotify
             .search(query, SearchType::Album, None, None, Some(6), Some(0))
             .await
-        {
+            .map_err(map_rspotify_error)?;
+
+        if let SearchResult::Albums(albums_page) = album_res {
             for album in albums_page.items {
                 let artist_name = album
                     .artists
@@ -105,10 +109,12 @@ pub async fn execute_search(
             }
         }
 
-        if let Ok(SearchResult::Artists(artists_page)) = spotify
+        let artist_res = spotify
             .search(query, SearchType::Artist, None, None, Some(6), Some(0))
             .await
-        {
+            .map_err(map_rspotify_error)?;
+
+        if let SearchResult::Artists(artists_page) = artist_res {
             for artist in artists_page.items {
                 let image_url = artist.images.first().map(|img| img.url.clone());
 

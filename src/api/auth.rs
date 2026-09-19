@@ -198,30 +198,65 @@ pub async fn refresh_token_if_expired(spotify: &AuthCodePkceSpotify) -> Result<(
     Ok(())
 }
 
-/// Executes a fallible Spotify API closure, detecting 401 Unauthorized errors (refreshing token)
-/// and handling rate limiting (429 Too Many Requests) by awaiting `Retry-After` seconds.
+#[must_use]
+pub fn map_rspotify_error(e: rspotify::ClientError) -> AppError {
+    match e {
+        rspotify::ClientError::Http(http_err) => match *http_err {
+            rspotify::http::HttpError::StatusCode(ref resp)
+                if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS =>
+            {
+                let secs = resp
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|h| h.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(2);
+                AppError::RateLimited(secs)
+            }
+            rspotify::http::HttpError::StatusCode(ref resp)
+                if resp.status() == reqwest::StatusCode::UNAUTHORIZED =>
+            {
+                AppError::Auth("Unauthorized 401".to_string())
+            }
+            other => AppError::Network(other.to_string()),
+        },
+        rspotify::ClientError::InvalidToken => AppError::Auth("Invalid token".to_string()),
+        other => {
+            let err_str = other.to_string();
+            if err_str.contains("429") {
+                AppError::RateLimited(2)
+            } else {
+                AppError::Network(err_str)
+            }
+        }
+    }
+}
+
 #[allow(clippy::missing_errors_doc)]
 pub async fn with_auto_reauth<F, Fut, T>(spotify: &AuthCodePkceSpotify, f: F) -> Result<T, AppError>
 where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = Result<T, AppError>>,
 {
-    match f().await {
-        Ok(val) => Ok(val),
-        Err(AppError::RateLimited(secs)) => {
-            tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
-            f().await
-        }
-        Err(AppError::Auth(_) | AppError::Network(_)) => {
-            if refresh_token_if_expired(spotify).await.is_ok() {
-                f().await
-            } else {
-                Err(AppError::Auth(
-                    "Session expired. Please log in again.".to_string(),
-                ))
+    let mut attempts = 0;
+    loop {
+        match f().await {
+            Ok(val) => return Ok(val),
+            Err(AppError::RateLimited(secs)) if attempts < 3 => {
+                attempts += 1;
+                tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
             }
+            Err(AppError::Auth(_) | AppError::Network(_)) if attempts < 1 => {
+                attempts += 1;
+                if refresh_token_if_expired(spotify).await.is_ok() {
+                    continue;
+                }
+                return Err(AppError::Auth(
+                    "Session expired. Please log in again.".to_string(),
+                ));
+            }
+            Err(e) => return Err(e),
         }
-        Err(e) => Err(e),
     }
 }
 
@@ -245,5 +280,32 @@ mod tests {
         let spotify = get_spotify_client();
         let res = with_auto_reauth(&spotify, || async { Ok::<i32, AppError>(42) }).await;
         assert_eq!(res.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_map_rspotify_error_invalid_token() {
+        let err = rspotify::ClientError::InvalidToken;
+        let mapped = map_rspotify_error(err);
+        assert!(matches!(mapped, AppError::Auth(_)));
+    }
+
+    #[tokio::test]
+    async fn test_with_auto_reauth_rate_limit_retry() {
+        let spotify = get_spotify_client();
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let c = counter.clone();
+        let res = with_auto_reauth(&spotify, || {
+            let count = c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async move {
+                if count == 0 {
+                    Err(AppError::RateLimited(0))
+                } else {
+                    Ok(99)
+                }
+            }
+        })
+        .await;
+        assert_eq!(res.unwrap(), 99);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 }
