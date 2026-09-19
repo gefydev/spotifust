@@ -30,7 +30,27 @@ pub const ACCENT_PRESSED: Color = Color {
     a: 1.0,
 };
 
-// Aliases for compatibility
+pub const SPOTIFY_GREEN: Color = Color {
+    r: 0.114,
+    g: 0.725,
+    b: 0.329,
+    a: 1.0,
+};
+
+pub const SPOTIFY_GREEN_HOVER: Color = Color {
+    r: 0.118,
+    g: 0.843,
+    b: 0.376,
+    a: 1.0,
+};
+
+pub const SPOTIFY_GREEN_PRESSED: Color = Color {
+    r: 0.102,
+    g: 0.640,
+    b: 0.290,
+    a: 1.0,
+};
+
 #[allow(dead_code)]
 pub const GREEN: Color = ACCENT;
 #[allow(dead_code)]

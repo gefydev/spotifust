@@ -242,6 +242,7 @@ pub enum AppState {
     Login {
         is_loading: bool,
         error: Option<String>,
+        animation_tick: u32,
     },
     Main {
         nav_item: NavigationItem,
@@ -303,6 +304,8 @@ pub enum Message {
     ErrorEncountered(AppError),
     // Login Messages
     LoginRequested,
+    LoginAnimationTick,
+    CancelLogin,
     CheckLogin,
     CheckLoginFailed,
     LoginSuccess(Box<rspotify::AuthCodePkceSpotify>),
@@ -503,6 +506,7 @@ impl App {
                 state: AppState::Login {
                     is_loading: true,
                     error: None,
+                    animation_tick: 0,
                 },
                 audio_tx,
                 active_error: None,
@@ -519,9 +523,25 @@ impl App {
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
         match &self.state {
-            AppState::Login {
-                is_loading: true, ..
-            } => iced::time::every(std::time::Duration::from_secs(2)).map(|_| Message::CheckLogin),
+            AppState::Login { is_loading, .. } => {
+                let mut subs = vec![
+                    iced::time::every(std::time::Duration::from_millis(80))
+                        .map(|_| Message::LoginAnimationTick),
+                    iced::event::listen().filter_map(|event| match event {
+                        iced::Event::Window(iced::window::Event::CloseRequested) => {
+                            Some(Message::AppCloseRequested)
+                        }
+                        _ => None,
+                    }),
+                ];
+                if *is_loading {
+                    subs.push(
+                        iced::time::every(std::time::Duration::from_secs(2))
+                            .map(|_| Message::CheckLogin),
+                    );
+                }
+                iced::Subscription::batch(subs)
+            }
             AppState::Main {
                 audio_session,
                 playback,
@@ -563,7 +583,6 @@ impl App {
                 }));
                 iced::Subscription::batch(subs)
             }
-            AppState::Login { .. } => iced::Subscription::none(),
         }
     }
 }
@@ -809,16 +828,42 @@ impl App {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::ErrorEncountered(e) => {
-                self.active_error = Some(e.to_string());
+                if matches!(e, AppError::Auth(_)) {
+                    let _ = self.audio_tx.try_send(AudioCommand::Pause);
+                    self.active_error = None;
+                    self.state = AppState::Login {
+                        is_loading: false,
+                        error: Some("Session expired. Please log in again.".to_string()),
+                        animation_tick: 0,
+                    };
+                } else {
+                    self.active_error = Some(e.to_string());
+                }
                 Task::none()
             }
             Message::DismissError => {
                 self.active_error = None;
                 Task::none()
             }
-            Message::LoginRequested => {
+            Message::LoginAnimationTick => {
+                if let AppState::Login { animation_tick, .. } = &mut self.state {
+                    *animation_tick = animation_tick.wrapping_add(1);
+                }
+                Task::none()
+            }
+            Message::CancelLogin => {
                 if let AppState::Login { is_loading, .. } = &mut self.state {
+                    *is_loading = false;
+                }
+                Task::none()
+            }
+            Message::LoginRequested => {
+                if let AppState::Login {
+                    is_loading, error, ..
+                } = &mut self.state
+                {
                     *is_loading = true;
+                    *error = None;
 
                     return Task::perform(
                         async { crate::api::auth::do_login_flow().await },
@@ -1631,19 +1676,13 @@ impl App {
                 Task::none()
             }
             Message::SessionExpired => {
-                if let AppState::Main {
-                    audio_session,
-                    playback,
-                    ..
-                } = &mut self.state
-                {
-                    *audio_session = None;
-                    playback.is_playing = false;
-                }
-                self.active_error = Some(
-                    "Spotify audio session expired or disconnected. Re-connection required."
-                        .to_string(),
-                );
+                let _ = self.audio_tx.try_send(AudioCommand::Pause);
+                self.active_error = None;
+                self.state = AppState::Login {
+                    is_loading: false,
+                    error: Some("Spotify session expired. Please log in again.".to_string()),
+                    animation_tick: 0,
+                };
                 Task::none()
             }
             Message::LoginFailed(err) => {
@@ -3003,9 +3042,11 @@ impl App {
     #[allow(clippy::too_many_lines)]
     pub fn view(&self) -> Element<'_, Message> {
         let content = match &self.state {
-            AppState::Login { is_loading, error } => {
-                login::view("", "", *is_loading, error.as_deref())
-            }
+            AppState::Login {
+                is_loading,
+                error,
+                animation_tick,
+            } => login::view(*is_loading, error.as_deref(), *animation_tick),
             AppState::Main {
                 nav_item,
                 playback,
@@ -3462,5 +3503,149 @@ mod tests {
         let saved_scale = load_ui_scale();
         assert!((saved_vol - 0.65).abs() < f32::EPSILON);
         assert!((saved_scale - 1.15).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_session_expired_transitions_to_login() {
+        let (audio_tx, _) = tokio::sync::mpsc::channel(1);
+        let mut app = App {
+            state: AppState::Main {
+                nav_item: NavigationItem::Home,
+                playback: PlaybackState::default(),
+                audio_session: None,
+                user_profile: None,
+                user_playlists: Vec::new(),
+                user_albums: Vec::new(),
+                user_top_tracks: Vec::new(),
+                featured_playlists: Vec::new(),
+                featured_albums: Vec::new(),
+                search_query: String::new(),
+                search_results: crate::api::search::SearchResults::default(),
+                is_searching: false,
+                sidebar_filter: SidebarFilter::All,
+                selected_playlist: None,
+                selected_album: None,
+                user_queue: Vec::new(),
+                context_queue: Vec::new(),
+                original_context_queue: Vec::new(),
+                context_index: 0,
+                history: Vec::new(),
+                active_context_menu: None,
+                active_modal: None,
+                toast_notification: None,
+                loaded_images: crate::api::cache::LruCache::new(5),
+                spotify_client: None,
+                sidebar_width: 240.0,
+                right_panel_width: 280.0,
+                active_right_panel: None,
+                dragging_sidebar: false,
+                dragging_right_panel: false,
+                window_width: 1200.0,
+                navigation_history: Vec::new(),
+                forward_history: Vec::new(),
+                current_lyrics: None,
+                is_loading_lyrics: false,
+                current_artist_bio: None,
+                is_loading_artist_bio: false,
+                autoplay_enabled: true,
+                search_category_filter: SearchCategoryFilter::All,
+                cache_size_bytes: 0,
+                allow_explicit_content: true,
+                ui_scale: 1.0,
+            },
+            audio_tx,
+            active_error: Some("Old error".to_string()),
+        };
+
+        let _ = app.update(Message::SessionExpired);
+
+        assert!(app.active_error.is_none());
+        match app.state {
+            AppState::Login {
+                is_loading,
+                error,
+                animation_tick,
+            } => {
+                assert!(!is_loading);
+                assert!(error.is_some());
+                assert_eq!(animation_tick, 0);
+            }
+            AppState::Main { .. } => panic!("Expected transition to AppState::Login"),
+        }
+    }
+
+    #[test]
+    fn test_auth_error_transitions_to_login() {
+        let (audio_tx, _) = tokio::sync::mpsc::channel(1);
+        let mut app = App {
+            state: AppState::Login {
+                is_loading: false,
+                error: None,
+                animation_tick: 0,
+            },
+            audio_tx,
+            active_error: None,
+        };
+
+        let _ = app.update(Message::ErrorEncountered(AppError::Auth(
+            "Token revoked".to_string(),
+        )));
+
+        assert!(app.active_error.is_none());
+        match app.state {
+            AppState::Login {
+                is_loading, error, ..
+            } => {
+                assert!(!is_loading);
+                assert!(error.is_some());
+            }
+            AppState::Main { .. } => panic!("Expected AppState::Login"),
+        }
+    }
+
+    #[test]
+    fn test_login_animation_tick_increments() {
+        let (audio_tx, _) = tokio::sync::mpsc::channel(1);
+        let mut app = App {
+            state: AppState::Login {
+                is_loading: false,
+                error: None,
+                animation_tick: 5,
+            },
+            audio_tx,
+            active_error: None,
+        };
+
+        let _ = app.update(Message::LoginAnimationTick);
+
+        match app.state {
+            AppState::Login { animation_tick, .. } => {
+                assert_eq!(animation_tick, 6);
+            }
+            AppState::Main { .. } => panic!("Expected AppState::Login"),
+        }
+    }
+
+    #[test]
+    fn test_cancel_login_sets_is_loading_false() {
+        let (audio_tx, _) = tokio::sync::mpsc::channel(1);
+        let mut app = App {
+            state: AppState::Login {
+                is_loading: true,
+                error: None,
+                animation_tick: 0,
+            },
+            audio_tx,
+            active_error: None,
+        };
+
+        let _ = app.update(Message::CancelLogin);
+
+        match app.state {
+            AppState::Login { is_loading, .. } => {
+                assert!(!is_loading);
+            }
+            AppState::Main { .. } => panic!("Expected AppState::Login"),
+        }
     }
 }
