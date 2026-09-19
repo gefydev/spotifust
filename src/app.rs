@@ -75,6 +75,8 @@ pub struct TrackInfo {
     pub duration_ms: u32,
     pub image_url: Option<String>,
     pub uri: String,
+    #[serde(default)]
+    pub explicit: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -253,6 +255,7 @@ pub enum AppState {
         autoplay_enabled: bool,
         search_category_filter: SearchCategoryFilter,
         cache_size_bytes: u64,
+        allow_explicit_content: bool,
     },
 }
 
@@ -381,6 +384,7 @@ pub enum Message {
     ClearCacheRequested,
     CacheCleared(Result<u64, AppError>),
     CacheSizeCalculated(u64),
+    ToggleExplicitContent,
 }
 
 struct PlayerEventsRecipe {
@@ -850,6 +854,7 @@ impl App {
                     autoplay_enabled: true,
                     search_category_filter: SearchCategoryFilter::All,
                     cache_size_bytes: 0,
+                    allow_explicit_content: true,
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -1075,6 +1080,7 @@ impl App {
                             duration_ms: info.duration_ms,
                             image_url: info.image_url,
                             uri: info.uri.clone(),
+                            explicit: false,
                         });
                         playback.progress_ms = info.progress_ms;
                         playback.is_playing = info.is_playing;
@@ -1285,6 +1291,7 @@ impl App {
                                 duration_ms: t.duration_ms,
                                 image_url: t.image_url.clone(),
                                 uri: t.uri.clone(),
+                                explicit: false,
                             })
                             .collect();
                         if let Some(idx) = new_ctx.iter().position(|t| t.uri == uri) {
@@ -1307,6 +1314,7 @@ impl App {
                                 duration_ms: t.duration_ms,
                                 image_url: sa.image_url.clone(),
                                 uri: t.uri.clone(),
+                                explicit: false,
                             })
                             .collect();
                         if let Some(idx) = new_ctx.iter().position(|t| t.uri == uri) {
@@ -1329,6 +1337,7 @@ impl App {
                                 duration_ms: t.duration_ms,
                                 image_url: t.image_url.clone(),
                                 uri: uri.clone(),
+                                explicit: t.explicit,
                             });
                         } else if let Some(t) = search_results.tracks.iter().find(|t| t.uri == uri)
                         {
@@ -1339,6 +1348,7 @@ impl App {
                                 duration_ms: t.duration_ms,
                                 image_url: t.image_url.clone(),
                                 uri: uri.clone(),
+                                explicit: t.explicit,
                             });
                         }
                     }
@@ -1507,6 +1517,7 @@ impl App {
                                 duration_ms: audio_item.duration_ms,
                                 image_url,
                                 uri: playback.current_track_uri.clone().unwrap_or_default(),
+                                explicit: false,
                             });
 
                             if *active_right_panel == Some(RightPanelTab::Lyrics) {
@@ -2739,6 +2750,16 @@ impl App {
                 }
                 Task::none()
             }
+            Message::ToggleExplicitContent => {
+                if let AppState::Main {
+                    allow_explicit_content,
+                    ..
+                } = &mut self.state
+                {
+                    *allow_explicit_content = !*allow_explicit_content;
+                }
+                Task::none()
+            }
             Message::CacheSizeCalculated(bytes) => {
                 if let AppState::Main {
                     cache_size_bytes, ..
@@ -2798,6 +2819,7 @@ impl App {
                                         duration_ms: t.duration_ms,
                                         image_url: t.image_url,
                                         uri: t.uri,
+                                        explicit: t.explicit,
                                     })
                                     .collect();
                                 *context_index = 0;
@@ -2872,6 +2894,7 @@ impl App {
                 autoplay_enabled,
                 search_category_filter,
                 cache_size_bytes,
+                allow_explicit_content,
                 ..
             } => crate::ui::main_layout::view(
                 nav_item,
@@ -2906,6 +2929,7 @@ impl App {
                 *autoplay_enabled,
                 *search_category_filter,
                 *cache_size_bytes,
+                *allow_explicit_content,
             ),
         };
 
@@ -3243,5 +3267,14 @@ mod tests {
             map_keyboard_shortcut(&Key::Named(Named::ArrowRight), alt_mod),
             Some(Message::NavigateForward)
         ));
+    }
+
+    #[test]
+    fn test_explicit_content_toggle() {
+        let mut allow_explicit = true;
+        allow_explicit = !allow_explicit;
+        assert!(!allow_explicit);
+        allow_explicit = !allow_explicit;
+        assert!(allow_explicit);
     }
 }

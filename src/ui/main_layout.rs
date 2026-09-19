@@ -90,6 +90,7 @@ pub fn view<'a>(
     autoplay_enabled: bool,
     search_category_filter: SearchCategoryFilter,
     cache_size_bytes: u64,
+    allow_explicit_content: bool,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
@@ -127,6 +128,7 @@ pub fn view<'a>(
         autoplay_enabled,
         search_category_filter,
         cache_size_bytes,
+        allow_explicit_content,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -641,9 +643,10 @@ fn view_main_content<'a>(
     autoplay_enabled: bool,
     search_category_filter: SearchCategoryFilter,
     cache_size_bytes: u64,
+    allow_explicit_content: bool,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
-        return view_settings_page(autoplay_enabled, cache_size_bytes);
+        return view_settings_page(autoplay_enabled, cache_size_bytes, allow_explicit_content);
     }
 
     if current_nav == NavigationItem::Search {
@@ -652,6 +655,7 @@ fn view_main_content<'a>(
             is_searching,
             loaded_images,
             search_category_filter,
+            allow_explicit_content,
         );
     }
 
@@ -861,6 +865,7 @@ fn view_main_content<'a>(
                     duration_ms: track.duration_ms,
                     image_url: track.image_url.clone(),
                     uri: uri.clone(),
+                    explicit: false,
                 };
 
                 let track_item = Button::new(
@@ -1080,6 +1085,7 @@ fn view_main_content<'a>(
                     duration_ms: track.duration_ms,
                     image_url: sa.image_url.clone(),
                     uri: uri.clone(),
+                    explicit: false,
                 };
 
                 let track_item = Button::new(
@@ -1294,6 +1300,7 @@ fn view_main_content<'a>(
                 duration_ms: track.duration_ms,
                 image_url: track.image_url.clone(),
                 uri: track.uri.clone(),
+                explicit: track.explicit,
             };
             let card = media_card_with_image(
                 &track.title,
@@ -2776,6 +2783,7 @@ fn view_search_results<'a>(
     is_searching: bool,
     loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
     category_filter: SearchCategoryFilter,
+    allow_explicit_content: bool,
 ) -> Element<'a, Message> {
     if is_searching {
         return Container::new(
@@ -2802,6 +2810,12 @@ fn view_search_results<'a>(
         .align_y(iced::alignment::Vertical::Center)
         .into();
     }
+
+    let tracks_list: Vec<&'a crate::api::search::SearchResultTrack> = if allow_explicit_content {
+        results.tracks.iter().collect()
+    } else {
+        results.tracks.iter().filter(|t| !t.explicit).collect()
+    };
 
     let make_pill = |label: &'static str, filter: SearchCategoryFilter| {
         let is_selected = category_filter == filter;
@@ -2870,6 +2884,51 @@ fn view_search_results<'a>(
             theme::RADIUS_SM,
         );
 
+        let title_content = if track.explicit {
+            Row::new()
+                .spacing(6)
+                .align_y(Alignment::Center)
+                .push(
+                    Text::new(&track.title)
+                        .size(14)
+                        .font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..Default::default()
+                        })
+                        .color(theme::TEXT_PRIMARY),
+                )
+                .push(
+                    Container::new(
+                        Text::new("E")
+                            .size(9)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..Default::default()
+                            })
+                            .color(theme::TEXT_SECONDARY),
+                    )
+                    .padding([1, 4])
+                    .style(|_theme: &Theme| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.15))),
+                        border: Border {
+                            radius: 2.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }),
+                )
+        } else {
+            Row::new().push(
+                Text::new(&track.title)
+                    .size(14)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(theme::TEXT_PRIMARY),
+            )
+        };
+
         let row = Row::new()
             .align_y(Alignment::Center)
             .spacing(16)
@@ -2881,22 +2940,11 @@ fn view_search_results<'a>(
             )
             .push(track_cover)
             .push(
-                Column::new()
-                    .spacing(2)
-                    .push(
-                        Text::new(&track.title)
-                            .size(14)
-                            .font(iced::Font {
-                                weight: iced::font::Weight::Bold,
-                                ..Default::default()
-                            })
-                            .color(theme::TEXT_PRIMARY),
-                    )
-                    .push(
-                        Text::new(format!("{} • {}", track.artist, track.album))
-                            .size(12)
-                            .color(theme::TEXT_SECONDARY),
-                    ),
+                Column::new().spacing(2).push(title_content).push(
+                    Text::new(format!("{} • {}", track.artist, track.album))
+                        .size(12)
+                        .color(theme::TEXT_SECONDARY),
+                ),
             )
             .push(Space::new().width(Length::Fill))
             .push(
@@ -2931,7 +2979,7 @@ fn view_search_results<'a>(
 
     match category_filter {
         SearchCategoryFilter::All => {
-            if let Some(top_track) = results.tracks.first() {
+            if let Some(top_track) = tracks_list.first() {
                 let top_uri = top_track.uri.clone();
                 let top_cover = view_image_or_icon(
                     top_track.image_url.as_deref(),
@@ -2941,20 +2989,59 @@ fn view_search_results<'a>(
                     theme::RADIUS_MD,
                 );
 
+                let top_title_content = if top_track.explicit {
+                    Row::new()
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                        .push(
+                            Text::new(&top_track.title)
+                                .size(24)
+                                .font(iced::Font {
+                                    weight: iced::font::Weight::Bold,
+                                    ..Default::default()
+                                })
+                                .color(theme::TEXT_PRIMARY),
+                        )
+                        .push(
+                            Container::new(
+                                Text::new("E")
+                                    .size(10)
+                                    .font(iced::Font {
+                                        weight: iced::font::Weight::Bold,
+                                        ..Default::default()
+                                    })
+                                    .color(theme::TEXT_SECONDARY),
+                            )
+                            .padding([2, 5])
+                            .style(|_theme: &Theme| container::Style {
+                                background: Some(Background::Color(Color::from_rgba(
+                                    1.0, 1.0, 1.0, 0.15,
+                                ))),
+                                border: Border {
+                                    radius: 2.0.into(),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            }),
+                        )
+                } else {
+                    Row::new().push(
+                        Text::new(&top_track.title)
+                            .size(24)
+                            .font(iced::Font {
+                                weight: iced::font::Weight::Bold,
+                                ..Default::default()
+                            })
+                            .color(theme::TEXT_PRIMARY),
+                    )
+                };
+
                 let top_card = Button::new(
                     Container::new(
                         Column::new()
                             .spacing(14)
                             .push(top_cover)
-                            .push(
-                                Text::new(&top_track.title)
-                                    .size(24)
-                                    .font(iced::Font {
-                                        weight: iced::font::Weight::Bold,
-                                        ..Default::default()
-                                    })
-                                    .color(theme::TEXT_PRIMARY),
-                            )
+                            .push(top_title_content)
                             .push(
                                 Row::new()
                                     .spacing(8)
@@ -3014,7 +3101,7 @@ fn view_search_results<'a>(
                 });
 
                 let mut top_songs_col = Column::new().spacing(4);
-                for (idx, track) in results.tracks.iter().take(4).enumerate() {
+                for (idx, track) in tracks_list.iter().take(4).enumerate() {
                     top_songs_col = top_songs_col.push(render_track_row(idx, track));
                 }
 
@@ -3108,7 +3195,7 @@ fn view_search_results<'a>(
         }
         SearchCategoryFilter::Tracks => {
             let mut tracks_col = Column::new().spacing(4);
-            for (idx, track) in results.tracks.iter().enumerate() {
+            for (idx, track) in tracks_list.iter().enumerate() {
                 tracks_col = tracks_col.push(render_track_row(idx, track));
             }
             content = content
@@ -3373,7 +3460,11 @@ fn render_skeleton_quick_grid<'a>() -> Element<'a, Message> {
 }
 
 #[allow(clippy::too_many_lines, clippy::items_after_statements)]
-fn view_settings_page<'a>(autoplay_enabled: bool, cache_size_bytes: u64) -> Element<'a, Message> {
+fn view_settings_page<'a>(
+    autoplay_enabled: bool,
+    cache_size_bytes: u64,
+    allow_explicit_content: bool,
+) -> Element<'a, Message> {
     fn setting_row<'a>(
         title: &'static str,
         desc: &'static str,
@@ -3539,6 +3630,12 @@ fn view_settings_page<'a>(autoplay_enabled: bool, cache_size_bytes: u64) -> Elem
     let main_col = Column::new()
         .spacing(24)
         .push(header)
+        .push(section_title("Explicit Content"))
+        .push(setting_row(
+            "Allow Explicit Content",
+            "Turn on to see and play music with the explicit content tag [E].",
+            make_toggle_badge(allow_explicit_content, Message::ToggleExplicitContent),
+        ))
         .push(section_title("Autoplay & Recommendations"))
         .push(setting_row(
             "Autoplay Similar Songs",
