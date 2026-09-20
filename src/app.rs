@@ -251,6 +251,7 @@ pub struct PlaybackState {
     pub last_volume: f32,
     pub is_shuffled: bool,
     pub repeat_mode: RepeatMode,
+    pub last_seek: Option<(std::time::Instant, u32)>,
 }
 
 impl Default for PlaybackState {
@@ -266,6 +267,7 @@ impl Default for PlaybackState {
             last_volume: vol,
             is_shuffled: false,
             repeat_mode: RepeatMode::Off,
+            last_seek: None,
         }
     }
 }
@@ -1597,6 +1599,7 @@ impl App {
                     playback.current_track_uri = Some(uri.clone());
                     playback.is_playing = true;
                     playback.progress_ms = 0;
+                    playback.last_seek = None;
 
                     let mut found_info: Option<TrackInfo> = None;
 
@@ -1892,12 +1895,14 @@ impl App {
                         if let AppState::Main { playback, .. } = &mut self.state {
                             playback.is_playing = false;
                             playback.progress_ms = 0;
+                            playback.last_seek = None;
                         }
                     }
                     PlayerEvent::EndOfTrack { .. } => {
                         if let AppState::Main { playback, .. } = &mut self.state {
                             playback.is_playing = false;
                             playback.progress_ms = 0;
+                            playback.last_seek = None;
                         }
                         return self.update(Message::SkipNext);
                     }
@@ -1916,6 +1921,15 @@ impl App {
 
             Message::PlaybackPositionReceived(pos) => {
                 if let AppState::Main { playback, .. } = &mut self.state {
+                    if let Some((seek_time, target_ms)) = playback.last_seek {
+                        if seek_time.elapsed() < std::time::Duration::from_millis(600) {
+                            if pos.abs_diff(target_ms) > 2500 {
+                                return Task::none();
+                            }
+                        } else {
+                            playback.last_seek = None;
+                        }
+                    }
                     let max_dur = playback.current_track.as_ref().map_or(u32::MAX, |t| {
                         if t.duration_ms > 0 {
                             t.duration_ms
@@ -2067,6 +2081,7 @@ impl App {
                 } = &mut self.state
                 {
                     playback.progress_ms = pos_ms;
+                    playback.last_seek = Some((std::time::Instant::now(), pos_ms));
                     if let Some(session) = audio_session {
                         let _ = session.cmd_tx.try_send(PlayerCommand::Seek(pos_ms));
                     }
@@ -2215,6 +2230,7 @@ impl App {
                     if let Some(next_track) = next_track_opt {
                         playback.current_track = Some(next_track.clone());
                         playback.progress_ms = 0;
+                        playback.last_seek = None;
                         playback.is_playing = true;
                         if let Some(session) = audio_session {
                             let _ = session
@@ -2230,6 +2246,7 @@ impl App {
                     } else {
                         playback.is_playing = false;
                         playback.progress_ms = 0;
+                        playback.last_seek = None;
                     }
                 }
                 Task::none()
@@ -2247,12 +2264,14 @@ impl App {
                 {
                     if playback.progress_ms > 3000 {
                         playback.progress_ms = 0;
+                        playback.last_seek = Some((std::time::Instant::now(), 0));
                         if let Some(session) = audio_session {
                             let _ = session.cmd_tx.try_send(PlayerCommand::Seek(0));
                         }
                     } else if let Some(prev_track) = history.pop() {
                         playback.current_track = Some(prev_track.clone());
                         playback.progress_ms = 0;
+                        playback.last_seek = None;
                         playback.is_playing = true;
                         if let Some(session) = audio_session {
                             let _ = session
@@ -2270,6 +2289,7 @@ impl App {
                         let prev_track = context_queue[*context_index].clone();
                         playback.current_track = Some(prev_track.clone());
                         playback.progress_ms = 0;
+                        playback.last_seek = None;
                         playback.is_playing = true;
                         if let Some(session) = audio_session {
                             let _ = session
@@ -2284,6 +2304,7 @@ impl App {
                         }
                     } else {
                         playback.progress_ms = 0;
+                        playback.last_seek = Some((std::time::Instant::now(), 0));
                         if let Some(session) = audio_session {
                             let _ = session.cmd_tx.try_send(PlayerCommand::Seek(0));
                         }
@@ -2307,6 +2328,7 @@ impl App {
                         let clamped_percent = percent.clamp(0.0, 1.0);
                         let pos_ms = (clamped_percent * track.duration_ms as f32) as u32;
                         playback.progress_ms = pos_ms;
+                        playback.last_seek = Some((std::time::Instant::now(), pos_ms));
 
                         if let Some(session) = audio_session {
                             let _ = session.cmd_tx.try_send(PlayerCommand::Seek(pos_ms));
@@ -4116,5 +4138,48 @@ mod tests {
         assert!(!load_gapless_playback());
         save_gapless_playback(true);
         assert!(load_gapless_playback());
+    }
+
+    #[test]
+    fn test_seek_jump_suppression() {
+        let mut playback = PlaybackState {
+            is_playing: true,
+            current_track: Some(TrackInfo {
+                title: "Around the World".to_string(),
+                artist: "Daft Punk".to_string(),
+                album: "Homework".to_string(),
+                duration_ms: 240_000,
+                image_url: None,
+                uri: "spotify:track:123".to_string(),
+                explicit: false,
+            }),
+            progress_ms: 10_000,
+            ..Default::default()
+        };
+
+        playback.progress_ms = 120_000;
+        playback.last_seek = Some((std::time::Instant::now(), 120_000));
+
+        let stale_pos: u32 = 10_500;
+        if let Some((seek_time, target_ms)) = playback.last_seek {
+            if seek_time.elapsed() < std::time::Duration::from_millis(600) {
+                if stale_pos.abs_diff(target_ms) > 2500 {
+                } else {
+                    playback.progress_ms = stale_pos;
+                }
+            }
+        }
+        assert_eq!(playback.progress_ms, 120_000);
+
+        let good_pos: u32 = 120_100;
+        if let Some((seek_time, target_ms)) = playback.last_seek {
+            if seek_time.elapsed() < std::time::Duration::from_millis(600) {
+                if good_pos.abs_diff(target_ms) > 2500 {
+                } else {
+                    playback.progress_ms = good_pos;
+                }
+            }
+        }
+        assert_eq!(playback.progress_ms, 120_100);
     }
 }
