@@ -127,6 +127,44 @@ pub fn load_accent_tone() -> crate::ui::theme::AccentTone {
         .unwrap_or_default()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+pub enum UiLanguage {
+    #[default]
+    English,
+    Spanish,
+    Portuguese,
+    German,
+}
+
+impl UiLanguage {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::English => "English",
+            Self::Spanish => "Español",
+            Self::Portuguese => "Português",
+            Self::German => "Deutsch",
+        }
+    }
+
+    pub const ALL: [Self; 4] = [
+        Self::English,
+        Self::Spanish,
+        Self::Portuguese,
+        Self::German,
+    ];
+}
+
+pub fn save_ui_language(lang: UiLanguage) {
+    let _ = crate::api::cache::DiskMetadataCache::save("ui_language", &lang);
+}
+
+#[must_use]
+pub fn load_ui_language() -> UiLanguage {
+    crate::api::cache::DiskMetadataCache::load::<UiLanguage>("ui_language")
+        .unwrap_or_default()
+}
+
 pub fn load_last_playback_state(playback: &mut PlaybackState) {
     let saved_vol = load_saved_volume();
     playback.volume = saved_vol;
@@ -299,6 +337,7 @@ pub enum AppState {
         allow_explicit_content: bool,
         ui_scale: f32,
         accent_tone: crate::ui::theme::AccentTone,
+        ui_language: UiLanguage,
     },
 }
 
@@ -436,6 +475,8 @@ pub enum Message {
     AdjustUiScale(f32),
     ResetUiScale,
     SetAccentTone(crate::ui::theme::AccentTone),
+    OpenSpotifyAccount,
+    SetUiLanguage(UiLanguage),
     AppCloseRequested,
 }
 
@@ -968,6 +1009,7 @@ impl App {
                     allow_explicit_content: true,
                     ui_scale: load_ui_scale(),
                     accent_tone: load_accent_tone(),
+                    ui_language: load_ui_language(),
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -3041,6 +3083,17 @@ impl App {
                 }
                 Task::none()
             }
+            Message::OpenSpotifyAccount => {
+                let _ = open::that("https://www.spotify.com/account");
+                Task::none()
+            }
+            Message::SetUiLanguage(lang) => {
+                if let AppState::Main { ui_language, .. } = &mut self.state {
+                    *ui_language = lang;
+                    save_ui_language(lang);
+                }
+                Task::none()
+            }
             Message::AppCloseRequested => {
                 if let AppState::Main {
                     playback,
@@ -3114,6 +3167,7 @@ impl App {
                 allow_explicit_content,
                 ui_scale,
                 accent_tone,
+                ui_language,
                 ..
             } => crate::ui::main_layout::view(
                 nav_item,
@@ -3153,6 +3207,7 @@ impl App {
                 *allow_explicit_content,
                 *ui_scale,
                 *accent_tone,
+                *ui_language,
             ),
         };
 
@@ -3591,6 +3646,7 @@ mod tests {
                 allow_explicit_content: true,
                 ui_scale: 1.0,
                 accent_tone: crate::ui::theme::AccentTone::default(),
+                ui_language: UiLanguage::default(),
             },
             audio_tx,
             active_error: Some("Old error".to_string()),
@@ -3730,6 +3786,7 @@ mod tests {
                 allow_explicit_content: true,
                 ui_scale: 1.0,
                 accent_tone: crate::ui::theme::AccentTone::default(),
+                ui_language: UiLanguage::default(),
             },
             audio_tx,
             active_error: None,
@@ -3765,5 +3822,12 @@ mod tests {
             crate::ui::theme::AccentTone::ElectricBlue
         );
         save_accent_tone(crate::ui::theme::AccentTone::default());
+    }
+
+    #[test]
+    fn test_ui_language_update_and_persistence() {
+        save_ui_language(UiLanguage::Spanish);
+        assert_eq!(load_ui_language(), UiLanguage::Spanish);
+        save_ui_language(UiLanguage::default());
     }
 }
