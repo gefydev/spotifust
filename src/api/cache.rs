@@ -187,11 +187,33 @@ fn calculate_dir_size(path: &std::path::Path) -> u64 {
 pub fn clear_cache_disk() -> Result<u64, AppError> {
     let dir = get_cache_dir();
     let freed_bytes = calculate_dir_size(&dir);
-    if dir.exists() {
-        fs::remove_dir_all(&dir)
-            .map_err(|e| AppError::Cache(format!("Failed to remove cache directory: {e}")))?;
-        fs::create_dir_all(&dir)
-            .map_err(|e| AppError::Cache(format!("Failed to recreate cache directory: {e}")))?;
+    let images_dir = dir.join("images");
+    if images_dir.exists() {
+        let _ = fs::remove_dir_all(&images_dir);
+        let _ = fs::create_dir_all(&images_dir);
+    }
+    let metadata_dir = dir.join("metadata");
+    if metadata_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&metadata_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let is_setting = matches!(
+                    name,
+                    "saved_volume.json"
+                        | "ui_scale.json"
+                        | "accent_tone.json"
+                        | "ui_language.json"
+                        | "audio_bitrate.json"
+                        | "audio_normalization.json"
+                        | "gapless_playback.json"
+                        | "last_playback_state.json"
+                );
+                if !is_setting && path.is_file() {
+                    let _ = fs::remove_file(path);
+                }
+            }
+        }
     }
     Ok(freed_bytes)
 }

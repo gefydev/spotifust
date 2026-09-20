@@ -3859,8 +3859,11 @@ mod tests {
         assert!((normal_scale - 1.05).abs() < f32::EPSILON);
     }
 
+    static DISK_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_perform_graceful_shutdown() {
+        let _guard = DISK_TEST_MUTEX.lock().unwrap();
         let playback = PlaybackState {
             volume: 0.65,
             ..Default::default()
@@ -3874,6 +3877,7 @@ mod tests {
 
     #[test]
     fn test_session_expired_transitions_to_login() {
+        let _guard = DISK_TEST_MUTEX.lock().unwrap();
         let (audio_tx, _) = tokio::sync::mpsc::channel(1);
         let mut app = App {
             state: AppState::Main {
@@ -4099,6 +4103,7 @@ mod tests {
 
     #[test]
     fn test_accent_tone_update_and_persistence() {
+        let _guard = DISK_TEST_MUTEX.lock().unwrap();
         save_accent_tone(crate::ui::theme::AccentTone::ElectricBlue);
         assert_eq!(
             load_accent_tone(),
@@ -4109,6 +4114,7 @@ mod tests {
 
     #[test]
     fn test_ui_language_update_and_persistence() {
+        let _guard = DISK_TEST_MUTEX.lock().unwrap();
         save_ui_language(UiLanguage::Spanish);
         assert_eq!(load_ui_language(), UiLanguage::Spanish);
         save_ui_language(UiLanguage::default());
@@ -4116,6 +4122,7 @@ mod tests {
 
     #[test]
     fn test_audio_bitrate_persistence() {
+        let _guard = DISK_TEST_MUTEX.lock().unwrap();
         save_audio_bitrate(crate::audio::session::AudioBitrate::VeryHigh320k);
         assert_eq!(
             load_audio_bitrate(),
@@ -4126,6 +4133,7 @@ mod tests {
 
     #[test]
     fn test_audio_normalization_persistence() {
+        let _guard = DISK_TEST_MUTEX.lock().unwrap();
         save_audio_normalization(false);
         assert!(!load_audio_normalization());
         save_audio_normalization(true);
@@ -4134,6 +4142,7 @@ mod tests {
 
     #[test]
     fn test_gapless_playback_persistence() {
+        let _guard = DISK_TEST_MUTEX.lock().unwrap();
         save_gapless_playback(false);
         assert!(!load_gapless_playback());
         save_gapless_playback(true);

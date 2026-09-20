@@ -166,7 +166,7 @@
 
 ## Architectural Debt
 
-- [ ] Floating-point precision in disk roundtrip serialization: JSON float serialization (`0.65`) deserializes into `f32` with tiny epsilon deviations; assert with delta tolerance (`0.001`) instead of `f32::EPSILON`.
+- [x] Disk persistence test concurrency & settings preservation: prevent `clear_cache_disk` from wiping user settings and serialize disk tests with a mutex to eliminate multi-threaded test race conditions.
 - [ ] Memory profiling harness on Linux: set up automated RSS tracking with `heaptrack` or `valgrind --tool=massif` to guarantee the < 25 MB ceiling under long-running playback.
 - [ ] Bounded channel capacity tuning: monitor high-bitrate (320kbps) audio decoding backpressure against rodio sink buffer consumption under low-spec CPU constraints.
 
