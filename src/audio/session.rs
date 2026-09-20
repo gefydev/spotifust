@@ -45,8 +45,50 @@ impl std::fmt::Debug for AudioSession {
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+pub enum AudioBitrate {
+    Normal96k,
+    #[default]
+    High160k,
+    VeryHigh320k,
+}
+
+impl AudioBitrate {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Normal96k => "96 kbps (Normal)",
+            Self::High160k => "160 kbps (High)",
+            Self::VeryHigh320k => "320 kbps (Very High)",
+        }
+    }
+
+    #[must_use]
+    pub const fn to_librespot_bitrate(self) -> Bitrate {
+        match self {
+            Self::Normal96k => Bitrate::Bitrate96,
+            Self::High160k => Bitrate::Bitrate160,
+            Self::VeryHigh320k => Bitrate::Bitrate320,
+        }
+    }
+
+    pub const ALL: [Self; 3] = [
+        Self::Normal96k,
+        Self::High160k,
+        Self::VeryHigh320k,
+    ];
+}
+
+#[allow(dead_code)]
 pub async fn connect_with_token(access_token: &str) -> Result<AudioSession, AppError> {
+    connect_with_token_and_bitrate(access_token, AudioBitrate::default()).await
+}
+
+#[allow(clippy::too_many_lines)]
+pub async fn connect_with_token_and_bitrate(
+    access_token: &str,
+    bitrate: AudioBitrate,
+) -> Result<AudioSession, AppError> {
     let credentials = Credentials::with_access_token(access_token);
     let session_config = SessionConfig::default();
 
@@ -57,7 +99,7 @@ pub async fn connect_with_token(access_token: &str) -> Result<AudioSession, AppE
         .map_err(|e| AppError::Playback(format!("Librespot login failed: {e}")))?;
 
     let player_config = PlayerConfig {
-        bitrate: Bitrate::Bitrate160,
+        bitrate: bitrate.to_librespot_bitrate(),
         ..PlayerConfig::default()
     };
 

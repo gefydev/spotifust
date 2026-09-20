@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- [x] SECTION 1 - Account & Language: External browser link to login methods (`spotify.com/account`) & persistent i18n UI language selector dropdown
+- [x] SECTION 3 - Audio Quality: Bitrate selector pills (Normal 96k, High 160k, Very High 320k bound to librespot decoder) with disk persistence
 
 ## Development Backlog
 
@@ -150,7 +150,7 @@
 - [x] SECTION 1 - Account & Language: External browser link to login methods (`spotify.com/account`) & persistent i18n UI language selector dropdown
 - [x] SECTION 2.1 - Explicit Content: Explicit content filter toggle (hide `explicit == true` tracks) and [E] badge indicator
 - [x] SECTION 2.2 - Autoplay: Autoplay toggle switch in Settings and automatic recommendation playback (`/v1/recommendations`) on end of queue
-- [ ] SECTION 3 - Audio Quality & Library: Bitrate selector dropdown (Normal 96k, High 160k, Very High 320k bound to librespot decoder), automatic bitrate step-down on network lag, compact library view toggle, show/hide local files toggle, multi-folder source picker list with live rescanner, and external playlist import button
+- [x] SECTION 3 - Audio Quality: Bitrate selector pills (Normal 96k, High 160k, Very High 320k bound to librespot decoder) with disk persistence
 - [ ] SECTION 4 - Display & Canvas: Display toggles (auto-open Now Playing on play, desktop overlay on playback controls) & Canvas/Video toggles (looping background Canvas & audio-only video fallback)
 - [x] SECTION 5 - UI Scaling & Hotkeys: UI Scale selector (70%-130%) with `Ctrl +` / `Ctrl -` hotkeys and Reset button
 - [ ] SECTION 6 - Privacy & Profile: Private Session toggle (6h auto-off), recent activity visibility dropdown, connected apps link, and profile element toggles (recent artists, followers, default public playlists)
