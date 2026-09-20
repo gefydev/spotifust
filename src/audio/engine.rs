@@ -9,9 +9,11 @@ pub enum AudioCommand {
     SetCrossfade(u32),
 }
 
+#[allow(dead_code)]
 pub struct AudioEngine;
 
 impl AudioEngine {
+    #[allow(dead_code)]
     pub fn spawn() -> tokio_mpsc::Sender<AudioCommand> {
         let (ui_tx, mut ui_rx) = tokio_mpsc::channel::<AudioCommand>(16);
 
@@ -90,6 +92,7 @@ impl AudioEngine {
 }
 
 // Custom Rodio Source to consume PCM arrays from the bounded channel
+#[allow(dead_code)]
 struct PcmSource {
     rx: tokio_mpsc::Receiver<Vec<f32>>,
     current_chunk: Vec<f32>,

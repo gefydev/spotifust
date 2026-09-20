@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- [ ] Reduce RAM baseline from ~45 MB down to the target < 25 MB ceiling
+- [ ] Optimize long playlist loading with incremental chunking/streaming or virtualized pagination to avoid UI lag
 
 ## Development Backlog
 
@@ -14,7 +14,7 @@
 - [x] Set up full GitHub Actions CI/CD infrastructure, Issue templates, and documentation
 - [x] Verify all `librespot` and `rspotify` raw error types are wrapped in `AppError` before reaching `Message` variants
 - [x] Audit and eliminate any remaining `.unwrap()` / `.expect()` calls outside `main()` bootstrap
-- [ ] Reduce RAM baseline from ~45 MB down to the target < 25 MB ceiling
+- [x] Reduce RAM baseline from ~45 MB down to the target < 25 MB ceiling
 
 ### Phase 2: Spotify Resizable Panel Layout Engine
 

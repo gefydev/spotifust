@@ -1,4 +1,4 @@
-use crate::audio::engine::{AudioCommand, AudioEngine};
+use crate::audio::engine::AudioCommand;
 use crate::audio::session::{AudioSession, AudioSessionEvent, PlayerCommand};
 use crate::error::AppError;
 use crate::ui::login;
@@ -9,6 +9,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
+
+pub const IMAGE_CACHE_CAPACITY: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavigationItem {
@@ -601,7 +603,7 @@ fn push_to_history(history: &mut Vec<NavDestination>, dest: NavDestination) {
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
-        let audio_tx = AudioEngine::spawn();
+        let (audio_tx, _) = tokio::sync::mpsc::channel(16);
 
         (
             Self {
@@ -1092,7 +1094,7 @@ impl App {
                     active_modal: None,
                     toast_notification: None,
                     toast_id: 0,
-                    loaded_images: crate::api::cache::LruCache::new(128),
+                    loaded_images: crate::api::cache::LruCache::new(IMAGE_CACHE_CAPACITY),
                     spotify_client: Some(Arc::clone(&spotify_arc)),
                     sidebar_width: sw,
                     right_panel_width: rw,
@@ -3906,7 +3908,7 @@ mod tests {
                 active_modal: None,
                 toast_notification: None,
                 toast_id: 0,
-                loaded_images: crate::api::cache::LruCache::new(128),
+                loaded_images: crate::api::cache::LruCache::new(IMAGE_CACHE_CAPACITY),
                 spotify_client: None,
                 sidebar_width: 240.0,
                 right_panel_width: 280.0,
@@ -4050,7 +4052,7 @@ mod tests {
                 active_modal: None,
                 toast_notification: None,
                 toast_id: 0,
-                loaded_images: crate::api::cache::LruCache::new(128),
+                loaded_images: crate::api::cache::LruCache::new(IMAGE_CACHE_CAPACITY),
                 spotify_client: None,
                 sidebar_width: 280.0,
                 right_panel_width: 320.0,

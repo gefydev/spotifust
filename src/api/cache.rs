@@ -67,20 +67,42 @@ impl ImageCache {
             return Err(AppError::Network("Downloaded empty image bytes".into()));
         }
 
-        fs::write(&file_path, bytes)
+        let processed = optimize_image_bytes(&bytes);
+        fs::write(&file_path, processed)
             .map_err(|e| AppError::Cache(format!("Failed to save image to disk: {e}")))?;
 
         Ok(file_path)
     }
 
-    /// Fetches image bytes by URL, returning a tuple of (url, bytes).
     #[allow(clippy::missing_errors_doc)]
     pub async fn fetch_image_bytes(url: String) -> Result<(String, Vec<u8>), AppError> {
         let file_path = Self::get_or_fetch_image(&url).await?;
         let bytes = fs::read(&file_path)
             .map_err(|e| AppError::Cache(format!("Failed to read cached image file: {e}")))?;
-        Ok((url, bytes))
+        let processed = optimize_image_bytes(&bytes);
+        if processed.len() < bytes.len() {
+            let _ = fs::write(&file_path, &processed);
+        }
+        Ok((url, processed))
     }
+}
+
+fn optimize_image_bytes(bytes: &[u8]) -> Vec<u8> {
+    if let Ok(img) = image::load_from_memory(bytes) {
+        if img.width() > 300 || img.height() > 300 {
+            let thumb = img.thumbnail(300, 300);
+            let mut cursor = std::io::Cursor::new(Vec::new());
+            let format = if img.color().has_alpha() {
+                image::ImageFormat::Png
+            } else {
+                image::ImageFormat::Jpeg
+            };
+            if thumb.write_to(&mut cursor, format).is_ok() {
+                return cursor.into_inner();
+            }
+        }
+    }
+    bytes.to_vec()
 }
 
 /// TTL-based in-memory metadata cache entry.
