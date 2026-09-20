@@ -1088,8 +1088,36 @@ fn view_main_content<'a>(
             .into()
         } else {
             let mut tracks_column = Column::new().spacing(6);
+            let has_multidisc = sa.tracks.iter().any(|t| t.disc_number > 1);
+            let mut current_disc = 0;
 
             for track in &sa.tracks {
+                if has_multidisc && track.disc_number != current_disc {
+                    current_disc = track.disc_number;
+                    let disc_header = Container::new(
+                        Row::new()
+                            .spacing(8)
+                            .align_y(Alignment::Center)
+                            .push(Icon::Album.view_colored(16.0, theme::TEXT_SECONDARY))
+                            .push(
+                                Text::new(format!("Disc {current_disc}"))
+                                    .size(13)
+                                    .font(iced::Font {
+                                        weight: iced::font::Weight::Bold,
+                                        ..Default::default()
+                                    })
+                                    .color(theme::TEXT_SECONDARY),
+                            ),
+                    )
+                    .padding(iced::Padding {
+                        top: if current_disc > 1 { 16.0 } else { 4.0 },
+                        right: 12.0,
+                        bottom: 4.0,
+                        left: 12.0,
+                    });
+                    tracks_column = tracks_column.push(disc_header);
+                }
+
                 let track_num = track.track_number.to_string();
                 let dur_str = format_duration(track.duration_ms);
                 let uri = track.uri.clone();

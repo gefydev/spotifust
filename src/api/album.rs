@@ -147,6 +147,7 @@ pub async fn fetch_new_releases(
 pub struct AlbumDetailTrack {
     pub id: String,
     pub track_number: u32,
+    pub disc_number: u32,
     pub title: String,
     pub artist: String,
     pub duration_ms: u32,
@@ -211,6 +212,7 @@ pub async fn fetch_album_details(
             tracks.push(AlbumDetailTrack {
                 id: track_id,
                 track_number: simple_track.track_number,
+                disc_number: u32::try_from(simple_track.disc_number).unwrap_or(1),
                 title: simple_track.name,
                 artist,
                 duration_ms: u32::try_from(simple_track.duration.num_milliseconds()).unwrap_or(0),
@@ -298,16 +300,30 @@ mod tests {
             image_url: None,
             release_date: "2020-07-10".to_string(),
             total_tracks: 15,
-            tracks: vec![AlbumDetailTrack {
-                id: "t_1".to_string(),
-                track_number: 1,
-                title: "1984".to_string(),
-                artist: "The Midnight".to_string(),
-                duration_ms: 200_000,
-                uri: "spotify:track:t_1".to_string(),
-            }],
+            tracks: vec![
+                AlbumDetailTrack {
+                    id: "t_1".to_string(),
+                    track_number: 1,
+                    disc_number: 1,
+                    title: "1984".to_string(),
+                    artist: "The Midnight".to_string(),
+                    duration_ms: 200_000,
+                    uri: "spotify:track:t_1".to_string(),
+                },
+                AlbumDetailTrack {
+                    id: "t_2".to_string(),
+                    track_number: 1,
+                    disc_number: 2,
+                    title: "Prom Night".to_string(),
+                    artist: "The Midnight".to_string(),
+                    duration_ms: 240_000,
+                    uri: "spotify:track:t_2".to_string(),
+                },
+            ],
         };
-        assert_eq!(ad.tracks.len(), 1);
+        assert_eq!(ad.tracks.len(), 2);
         assert_eq!(ad.tracks[0].title, "1984");
+        assert_eq!(ad.tracks[0].disc_number, 1);
+        assert_eq!(ad.tracks[1].disc_number, 2);
     }
 }
