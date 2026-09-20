@@ -176,7 +176,6 @@ pub async fn connect_with_token(access_token: &str) -> Result<AudioSession, AppE
                             }
                             PlayerEvent::Unavailable { .. } => {
                                 is_playing = false;
-                                let _ = event_tx.send(AudioSessionEvent::SessionExpired).await;
                             }
                             _ => {}
                         }

@@ -3,13 +3,13 @@ use crate::ui::icons::Icon;
 use crate::ui::theme;
 use iced::{
     Alignment, Background, Border, Color, Element, Length, Theme,
-    widget::{Button, Column, Container, Image, Row, Space, Text},
+    widget::{Button, Column, Container, Image, Row, Text},
 };
 
 const LOGO_BYTES: &[u8] = include_bytes!("../../assets/spotifust.png");
 
-#[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
-pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Element<'_, Message> {
+#[allow(clippy::too_many_lines)]
+pub fn view(is_loading: bool, error: Option<&str>) -> Element<'_, Message> {
     let logo_handle = iced::widget::image::Handle::from_bytes(LOGO_BYTES);
     let logo = Image::new(logo_handle)
         .width(Length::Fixed(84.0))
@@ -17,7 +17,7 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
         .filter_method(iced::widget::image::FilterMethod::Linear);
 
     let title = Text::new("Spotifust")
-        .size(36)
+        .size(40)
         .font(iced::Font {
             weight: iced::font::Weight::Bold,
             ..Default::default()
@@ -61,41 +61,15 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
         .push(badge);
 
     let subtitle = Text::new("Ultra-fast native Spotify client • Pure Rust • No web bloat")
-        .size(13)
+        .size(14)
         .color(theme::TEXT_SECONDARY);
 
-    let mut eq_row = Row::new().spacing(4).align_y(Alignment::End);
-    for i in 0..7 {
-        let tick_phase = (animation_tick % 1000) as f32 * 0.18;
-        let bar_offset = i as f32 * 0.95;
-        let factor = f32::midpoint((tick_phase + bar_offset).sin(), 1.0);
-        let bar_height = 5.0 + factor * 22.0;
-        let bar_color = if i % 2 == 0 {
-            theme::SPOTIFY_GREEN
-        } else {
-            theme::ACCENT
-        };
-        let bar = Container::new(Space::new())
-            .width(Length::Fixed(4.0))
-            .height(Length::Fixed(bar_height))
-            .style(move |_theme: &Theme| iced::widget::container::Style {
-                background: Some(Background::Color(bar_color)),
-                border: Border {
-                    radius: theme::RADIUS_SM.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            });
-        eq_row = eq_row.push(bar);
-    }
-
     let mut inner_col = Column::new()
-        .spacing(14)
+        .spacing(20)
         .align_x(Alignment::Center)
         .push(logo)
         .push(header_row)
-        .push(subtitle)
-        .push(Container::new(eq_row).padding([6, 0]));
+        .push(subtitle);
 
     if let Some(err) = error {
         let is_session_expired = err.to_lowercase().contains("expired")
@@ -163,8 +137,8 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
                         ..Default::default()
                     })),
             )
-            .padding([10, 16])
-            .width(Length::Fill)
+            .padding([12, 18])
+            .width(Length::Fixed(420.0))
             .style(move |_theme: &Theme| iced::widget::container::Style {
                 background: Some(Background::Color(alert_bg)),
                 border: Border {
@@ -178,17 +152,8 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
     }
 
     if is_loading {
-        let dots_count = (animation_tick / 3) % 4;
-        let dots = match dots_count {
-            0 => "",
-            1 => ".",
-            2 => "..",
-            _ => "...",
-        };
-        let loading_text = format!("Awaiting browser login{dots}");
-
-        let loading_card = Column::new()
-            .spacing(12)
+        let loading_block = Column::new()
+            .spacing(14)
             .align_x(Alignment::Center)
             .push(
                 Row::new()
@@ -196,7 +161,7 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
                     .spacing(10)
                     .push(Icon::Devices.view_colored(20.0, theme::SPOTIFY_GREEN))
                     .push(
-                        Text::new(loading_text)
+                        Text::new("Awaiting browser authorization...")
                             .size(15)
                             .font(iced::Font {
                                 weight: iced::font::Weight::Bold,
@@ -221,7 +186,7 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
                         .color(theme::TEXT_SECONDARY),
                 )
                 .on_press(Message::CancelLogin)
-                .padding([6, 18])
+                .padding([6, 20])
                 .style(|_theme: &Theme, status| {
                     let base = iced::widget::button::Style {
                         background: Some(Background::Color(theme::SURFACE_HOVER)),
@@ -242,20 +207,7 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
                 }),
             );
 
-        inner_col = inner_col.push(
-            Container::new(loading_card)
-                .padding([18, 24])
-                .width(Length::Fill)
-                .style(|_theme: &Theme| iced::widget::container::Style {
-                    background: Some(Background::Color(theme::SURFACE_HOVER)),
-                    border: Border {
-                        color: theme::BORDER_SUBTLE,
-                        width: 1.0,
-                        radius: theme::RADIUS_LG.into(),
-                    },
-                    ..Default::default()
-                }),
-        );
+        inner_col = inner_col.push(Container::new(loading_block).padding([10, 0]));
     } else {
         let login_btn = Button::new(
             Row::new()
@@ -273,7 +225,7 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
                 ),
         )
         .on_press(Message::LoginRequested)
-        .padding([15, 38])
+        .padding([16, 42])
         .style(|_theme: &Theme, status| {
             let base = iced::widget::button::Style {
                 background: Some(Background::Color(theme::SPOTIFY_GREEN)),
@@ -298,13 +250,13 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
             }
         });
 
-        inner_col = inner_col.push(Container::new(login_btn).padding([8, 0]));
+        inner_col = inner_col.push(Container::new(login_btn).padding([10, 0]));
     }
 
     let feature_badge = |icon: Icon, title: &'static str, subtitle: &'static str| {
         Container::new(
             Column::new()
-                .spacing(2)
+                .spacing(3)
                 .align_x(Alignment::Center)
                 .push(icon.view_colored(18.0, theme::SPOTIFY_GREEN))
                 .push(
@@ -318,14 +270,14 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
                 )
                 .push(Text::new(subtitle).size(10).color(theme::TEXT_TERTIARY)),
         )
-        .padding([8, 12])
-        .width(Length::FillPortion(1))
+        .padding([10, 14])
+        .width(Length::Fixed(130.0))
         .style(|_theme: &Theme| iced::widget::container::Style {
             background: Some(Background::Color(Color {
                 r: 1.0,
                 g: 1.0,
                 b: 1.0,
-                a: 0.03,
+                a: 0.02,
             })),
             border: Border {
                 radius: theme::RADIUS_MD.into(),
@@ -337,13 +289,13 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
     };
 
     let features_row = Row::new()
-        .spacing(8)
-        .width(Length::Fill)
+        .spacing(12)
+        .align_y(Alignment::Center)
         .push(feature_badge(Icon::MusicNote, "320 kbps", "Bitrate Audio"))
         .push(feature_badge(Icon::Devices, "< 25 MB", "Memory Usage"))
         .push(feature_badge(Icon::Lock, "PKCE Flow", "Keyring Vault"));
 
-    inner_col = inner_col.push(Container::new(features_row).padding([6, 0]));
+    inner_col = inner_col.push(Container::new(features_row).padding([10, 0]));
 
     let footer = Text::new("Powered by Librespot & RSpotify • Zero browser engine overhead")
         .size(11)
@@ -351,25 +303,7 @@ pub fn view(is_loading: bool, error: Option<&str>, animation_tick: u32) -> Eleme
 
     inner_col = inner_col.push(footer);
 
-    let card = Container::new(inner_col)
-        .padding(40)
-        .max_width(500.0)
-        .style(|_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(theme::SURFACE_CARD)),
-            border: Border {
-                radius: theme::RADIUS_XL.into(),
-                color: Color {
-                    r: 1.0,
-                    g: 1.0,
-                    b: 1.0,
-                    a: 0.08,
-                },
-                width: 1.0,
-            },
-            ..Default::default()
-        });
-
-    Container::new(card)
+    Container::new(inner_col)
         .width(Length::Fill)
         .height(Length::Fill)
         .center_x(Length::Fill)
@@ -387,16 +321,16 @@ mod tests {
 
     #[test]
     fn test_login_view_idle_renders_without_panic() {
-        let _ = view(false, None, 0);
+        let _ = view(false, None);
     }
 
     #[test]
     fn test_login_view_loading_renders_without_panic() {
-        let _ = view(true, None, 5);
+        let _ = view(true, None);
     }
 
     #[test]
     fn test_login_view_error_renders_without_panic() {
-        let _ = view(false, Some("Session expired. Please log in again."), 10);
+        let _ = view(false, Some("Session expired. Please log in again."));
     }
 }

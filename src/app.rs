@@ -239,10 +239,10 @@ pub enum ActiveModal {
 
 #[allow(clippy::large_enum_variant)]
 pub enum AppState {
+    Initializing,
     Login {
         is_loading: bool,
         error: Option<String>,
-        animation_tick: u32,
     },
     Main {
         nav_item: NavigationItem,
@@ -304,7 +304,6 @@ pub enum Message {
     ErrorEncountered(AppError),
     // Login Messages
     LoginRequested,
-    LoginAnimationTick,
     CancelLogin,
     CheckLogin,
     CheckLoginFailed,
@@ -503,11 +502,7 @@ impl App {
 
         (
             Self {
-                state: AppState::Login {
-                    is_loading: true,
-                    error: None,
-                    animation_tick: 0,
-                },
+                state: AppState::Initializing,
                 audio_tx,
                 active_error: None,
             },
@@ -523,17 +518,14 @@ impl App {
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
         match &self.state {
+            AppState::Initializing => iced::Subscription::none(),
             AppState::Login { is_loading, .. } => {
-                let mut subs = vec![
-                    iced::time::every(std::time::Duration::from_millis(80))
-                        .map(|_| Message::LoginAnimationTick),
-                    iced::event::listen().filter_map(|event| match event {
-                        iced::Event::Window(iced::window::Event::CloseRequested) => {
-                            Some(Message::AppCloseRequested)
-                        }
-                        _ => None,
-                    }),
-                ];
+                let mut subs = vec![iced::event::listen().filter_map(|event| match event {
+                    iced::Event::Window(iced::window::Event::CloseRequested) => {
+                        Some(Message::AppCloseRequested)
+                    }
+                    _ => None,
+                })];
                 if *is_loading {
                     subs.push(
                         iced::time::every(std::time::Duration::from_secs(2))
@@ -655,7 +647,7 @@ impl App {
     pub fn scale_factor(&self) -> f32 {
         match &self.state {
             AppState::Main { ui_scale, .. } => *ui_scale,
-            AppState::Login { .. } => 1.0,
+            AppState::Login { .. } | AppState::Initializing => 1.0,
         }
     }
     fn navigate_to(&mut self, dest: NavDestination) -> Task<Message> {
@@ -830,11 +822,12 @@ impl App {
             Message::ErrorEncountered(e) => {
                 if matches!(e, AppError::Auth(_)) {
                     let _ = self.audio_tx.try_send(AudioCommand::Pause);
+                    let _ = crate::api::cache::clear_cache_disk();
+                    let _ = crate::api::auth::delete_refresh_token_from_keyring();
                     self.active_error = None;
                     self.state = AppState::Login {
                         is_loading: false,
                         error: Some("Session expired. Please log in again.".to_string()),
-                        animation_tick: 0,
                     };
                 } else {
                     self.active_error = Some(e.to_string());
@@ -843,12 +836,6 @@ impl App {
             }
             Message::DismissError => {
                 self.active_error = None;
-                Task::none()
-            }
-            Message::LoginAnimationTick => {
-                if let AppState::Login { animation_tick, .. } = &mut self.state {
-                    *animation_tick = animation_tick.wrapping_add(1);
-                }
                 Task::none()
             }
             Message::CancelLogin => {
@@ -1657,6 +1644,14 @@ impl App {
                         }
                         return self.update(Message::SkipNext);
                     }
+                    PlayerEvent::Unavailable { .. } => {
+                        if let AppState::Main { playback, .. } = &mut self.state {
+                            playback.is_playing = false;
+                        }
+                        return self.update(Message::ShowToast(
+                            "Track unavailable for playback".to_string(),
+                        ));
+                    }
                     _ => {}
                 }
                 Task::none()
@@ -1677,23 +1672,30 @@ impl App {
             }
             Message::SessionExpired => {
                 let _ = self.audio_tx.try_send(AudioCommand::Pause);
+                let _ = crate::api::cache::clear_cache_disk();
+                let _ = crate::api::auth::delete_refresh_token_from_keyring();
                 self.active_error = None;
                 self.state = AppState::Login {
                     is_loading: false,
                     error: Some("Spotify session expired. Please log in again.".to_string()),
-                    animation_tick: 0,
                 };
                 Task::none()
             }
             Message::LoginFailed(err) => {
-                if let AppState::Login {
-                    is_loading, error, ..
-                } = &mut self.state
-                {
-                    *is_loading = false;
-                    if err != "No token" {
-                        *error = Some(err);
+                match &mut self.state {
+                    AppState::Initializing => {
+                        self.state = AppState::Login {
+                            is_loading: false,
+                            error: if err == "No token" { None } else { Some(err) },
+                        };
                     }
+                    AppState::Login { is_loading, error } => {
+                        *is_loading = false;
+                        if err != "No token" {
+                            *error = Some(err);
+                        }
+                    }
+                    AppState::Main { .. } => {}
                 }
                 Task::none()
             }
@@ -1755,7 +1757,7 @@ impl App {
                             None
                         }
                     }
-                    AppState::Login { .. } => None,
+                    AppState::Login { .. } | AppState::Initializing => None,
                 };
                 if let Some(dest) = target {
                     return self.navigate_to(dest);
@@ -1786,7 +1788,7 @@ impl App {
                             None
                         }
                     }
-                    AppState::Login { .. } => None,
+                    AppState::Login { .. } | AppState::Initializing => None,
                 };
                 if let Some(dest) = target {
                     return self.navigate_to(dest);
@@ -3042,11 +3044,15 @@ impl App {
     #[allow(clippy::too_many_lines)]
     pub fn view(&self) -> Element<'_, Message> {
         let content = match &self.state {
-            AppState::Login {
-                is_loading,
-                error,
-                animation_tick,
-            } => login::view(*is_loading, error.as_deref(), *animation_tick),
+            AppState::Initializing => iced::widget::Container::new(iced::widget::Space::new())
+                .width(iced::Length::Fill)
+                .height(iced::Length::Fill)
+                .style(|_theme| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(crate::ui::theme::BG_BASE)),
+                    ..Default::default()
+                })
+                .into(),
+            AppState::Login { is_loading, error } => login::view(*is_loading, error.as_deref()),
             AppState::Main {
                 nav_item,
                 playback,
@@ -3125,68 +3131,74 @@ impl App {
             ),
         };
 
-        if let Some(err) = &self.active_error {
-            use crate::ui::icons::Icon;
-            use crate::ui::theme;
-            use iced::widget::{Button, Column, Container, Row, Text, container};
-            use iced::{Alignment, Background, Border, Length};
+        if matches!(self.state, AppState::Main { .. }) {
+            if let Some(err) = &self.active_error {
+                use crate::ui::icons::Icon;
+                use crate::ui::theme;
+                use iced::widget::{Button, Column, Container, Row, Text, container};
+                use iced::{Alignment, Background, Border, Length};
 
-            let error_banner = Container::new(
-                Row::new()
-                    .spacing(12)
-                    .align_y(Alignment::Center)
-                    .push(Icon::X.view_colored(16.0, theme::TEXT_PRIMARY))
-                    .push(
-                        Text::new(err)
-                            .size(13)
-                            .font(iced::Font {
-                                weight: iced::font::Weight::Bold,
-                                ..Default::default()
-                            })
-                            .color(theme::TEXT_PRIMARY)
-                            .width(Length::Fill),
-                    )
-                    .push(
-                        Button::new(Icon::X.view_colored(14.0, theme::TEXT_SECONDARY))
-                            .padding(4)
-                            .on_press(Message::DismissError)
-                            .style(|_theme, status| {
-                                let base = iced::widget::button::Style {
-                                    background: Some(Background::Color(iced::Color::TRANSPARENT)),
+                let error_banner = Container::new(
+                    Row::new()
+                        .spacing(12)
+                        .align_y(Alignment::Center)
+                        .push(Icon::X.view_colored(16.0, theme::TEXT_PRIMARY))
+                        .push(
+                            Text::new(err)
+                                .size(13)
+                                .font(iced::Font {
+                                    weight: iced::font::Weight::Bold,
                                     ..Default::default()
-                                };
-                                match status {
-                                    iced::widget::button::Status::Hovered => {
-                                        iced::widget::button::Style {
-                                            background: Some(Background::Color(
-                                                theme::SURFACE_HOVER,
-                                            )),
-                                            ..base
+                                })
+                                .color(theme::TEXT_PRIMARY)
+                                .width(Length::Fill),
+                        )
+                        .push(
+                            Button::new(Icon::X.view_colored(14.0, theme::TEXT_SECONDARY))
+                                .padding(4)
+                                .on_press(Message::DismissError)
+                                .style(|_theme, status| {
+                                    let base = iced::widget::button::Style {
+                                        background: Some(Background::Color(
+                                            iced::Color::TRANSPARENT,
+                                        )),
+                                        ..Default::default()
+                                    };
+                                    match status {
+                                        iced::widget::button::Status::Hovered => {
+                                            iced::widget::button::Style {
+                                                background: Some(Background::Color(
+                                                    theme::SURFACE_HOVER,
+                                                )),
+                                                ..base
+                                            }
                                         }
+                                        _ => base,
                                     }
-                                    _ => base,
-                                }
-                            }),
-                    ),
-            )
-            .padding([10, 16])
-            .width(Length::Fill)
-            .style(|_theme| container::Style {
-                background: Some(Background::Color(theme::COLOR_ERROR)),
-                border: Border {
-                    radius: theme::RADIUS_MD.into(),
-                    color: theme::BORDER_SUBTLE,
-                    width: 1.0,
-                },
-                text_color: Some(theme::TEXT_PRIMARY),
-                ..Default::default()
-            });
+                                }),
+                        ),
+                )
+                .padding([10, 16])
+                .width(Length::Fill)
+                .style(|_theme| container::Style {
+                    background: Some(Background::Color(theme::COLOR_ERROR)),
+                    border: Border {
+                        radius: theme::RADIUS_MD.into(),
+                        color: theme::BORDER_SUBTLE,
+                        width: 1.0,
+                    },
+                    text_color: Some(theme::TEXT_PRIMARY),
+                    ..Default::default()
+                });
 
-            Column::new()
-                .spacing(8)
-                .push(Container::new(error_banner).padding([8, 12]))
-                .push(content)
-                .into()
+                Column::new()
+                    .spacing(8)
+                    .push(Container::new(error_banner).padding([8, 12]))
+                    .push(content)
+                    .into()
+            } else {
+                content
+            }
         } else {
             content
         }
@@ -3561,16 +3573,11 @@ mod tests {
 
         assert!(app.active_error.is_none());
         match app.state {
-            AppState::Login {
-                is_loading,
-                error,
-                animation_tick,
-            } => {
+            AppState::Login { is_loading, error } => {
                 assert!(!is_loading);
                 assert!(error.is_some());
-                assert_eq!(animation_tick, 0);
             }
-            AppState::Main { .. } => panic!("Expected transition to AppState::Login"),
+            _ => panic!("Expected transition to AppState::Login"),
         }
     }
 
@@ -3581,7 +3588,6 @@ mod tests {
             state: AppState::Login {
                 is_loading: false,
                 error: None,
-                animation_tick: 0,
             },
             audio_tx,
             active_error: None,
@@ -3599,30 +3605,27 @@ mod tests {
                 assert!(!is_loading);
                 assert!(error.is_some());
             }
-            AppState::Main { .. } => panic!("Expected AppState::Login"),
+            _ => panic!("Expected AppState::Login"),
         }
     }
 
     #[test]
-    fn test_login_animation_tick_increments() {
+    fn test_login_failed_from_initializing() {
         let (audio_tx, _) = tokio::sync::mpsc::channel(1);
         let mut app = App {
-            state: AppState::Login {
-                is_loading: false,
-                error: None,
-                animation_tick: 5,
-            },
+            state: AppState::Initializing,
             audio_tx,
             active_error: None,
         };
 
-        let _ = app.update(Message::LoginAnimationTick);
+        let _ = app.update(Message::LoginFailed("No token".to_string()));
 
         match app.state {
-            AppState::Login { animation_tick, .. } => {
-                assert_eq!(animation_tick, 6);
+            AppState::Login { is_loading, error } => {
+                assert!(!is_loading);
+                assert!(error.is_none());
             }
-            AppState::Main { .. } => panic!("Expected AppState::Login"),
+            _ => panic!("Expected AppState::Login"),
         }
     }
 
@@ -3633,7 +3636,6 @@ mod tests {
             state: AppState::Login {
                 is_loading: true,
                 error: None,
-                animation_tick: 0,
             },
             audio_tx,
             active_error: None,
@@ -3645,7 +3647,84 @@ mod tests {
             AppState::Login { is_loading, .. } => {
                 assert!(!is_loading);
             }
-            AppState::Main { .. } => panic!("Expected AppState::Login"),
+            _ => panic!("Expected AppState::Login"),
+        }
+    }
+
+    #[test]
+    fn test_player_event_unavailable_does_not_expire_session() {
+        let (audio_tx, _) = tokio::sync::mpsc::channel(1);
+        let mut app = App {
+            state: AppState::Main {
+                nav_item: NavigationItem::Home,
+                playback: PlaybackState {
+                    is_playing: true,
+                    ..Default::default()
+                },
+                audio_session: None,
+                user_profile: None,
+                user_playlists: Vec::new(),
+                user_albums: Vec::new(),
+                user_top_tracks: Vec::new(),
+                featured_playlists: Vec::new(),
+                featured_albums: Vec::new(),
+                search_query: String::new(),
+                search_results: crate::api::search::SearchResults::default(),
+                is_searching: false,
+                sidebar_filter: SidebarFilter::All,
+                selected_playlist: None,
+                selected_album: None,
+                user_queue: Vec::new(),
+                context_queue: Vec::new(),
+                original_context_queue: Vec::new(),
+                context_index: 0,
+                history: Vec::new(),
+                active_context_menu: None,
+                active_modal: None,
+                toast_notification: None,
+                loaded_images: crate::api::cache::LruCache::new(20),
+                spotify_client: None,
+                sidebar_width: 280.0,
+                right_panel_width: 320.0,
+                active_right_panel: None,
+                dragging_sidebar: false,
+                dragging_right_panel: false,
+                window_width: 1200.0,
+                navigation_history: Vec::new(),
+                forward_history: Vec::new(),
+                current_lyrics: None,
+                is_loading_lyrics: false,
+                current_artist_bio: None,
+                is_loading_artist_bio: false,
+                autoplay_enabled: true,
+                search_category_filter: SearchCategoryFilter::All,
+                cache_size_bytes: 0,
+                allow_explicit_content: true,
+                ui_scale: 1.0,
+            },
+            audio_tx,
+            active_error: None,
+        };
+
+        let dummy_uri = librespot::core::spotify_uri::SpotifyUri::from_uri(
+            "spotify:track:4cOdK2wGLETKBW3PvgPWqT",
+        )
+        .expect("valid uri");
+        let _ = app.update(Message::PlayerEventReceived(PlayerEvent::Unavailable {
+            track_id: dummy_uri,
+            play_request_id: 0,
+        }));
+
+        match app.state {
+            AppState::Main {
+                playback,
+                toast_notification,
+                ..
+            } => {
+                assert!(!playback.is_playing);
+                assert!(toast_notification.is_some());
+            }
+            _ => panic!("Expected to remain in AppState::Main"),
         }
     }
 }
