@@ -94,6 +94,7 @@ pub fn view<'a>(
     cache_size_bytes: u64,
     allow_explicit_content: bool,
     ui_scale: f32,
+    accent_tone: crate::ui::theme::AccentTone,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
@@ -133,6 +134,7 @@ pub fn view<'a>(
         cache_size_bytes,
         allow_explicit_content,
         ui_scale,
+        accent_tone,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -684,6 +686,7 @@ fn view_main_content<'a>(
     cache_size_bytes: u64,
     allow_explicit_content: bool,
     ui_scale: f32,
+    accent_tone: crate::ui::theme::AccentTone,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
         return view_settings_page(
@@ -691,6 +694,7 @@ fn view_main_content<'a>(
             cache_size_bytes,
             allow_explicit_content,
             ui_scale,
+            accent_tone,
         );
     }
 
@@ -3615,6 +3619,7 @@ fn view_settings_page<'a>(
     cache_size_bytes: u64,
     allow_explicit_content: bool,
     ui_scale: f32,
+    accent_tone: crate::ui::theme::AccentTone,
 ) -> Element<'a, Message> {
     fn setting_row<'a>(
         title: &'static str,
@@ -3643,16 +3648,16 @@ fn view_settings_page<'a>(
             .into()
     }
 
-    fn section_title<'a>(title: &'static str) -> Element<'a, Message> {
+    let section_title = move |title: &'static str| -> Element<'a, Message> {
         Text::new(title)
             .size(18)
             .font(iced::Font {
                 weight: iced::font::Weight::Bold,
                 ..Default::default()
             })
-            .color(theme::ACCENT)
+            .color(accent_tone.primary())
             .into()
-    }
+    };
 
     let header = Text::new("Settings")
         .size(32)
@@ -3987,7 +3992,100 @@ fn view_settings_page<'a>(
             }),
         );
 
+    let mut accent_picker = Row::new().spacing(8).align_y(Alignment::Center);
+    for tone in crate::ui::theme::AccentTone::ALL {
+        let is_selected = tone == accent_tone;
+        let dot = Container::new(Space::new())
+            .width(Length::Fixed(10.0))
+            .height(Length::Fixed(10.0))
+            .style(move |_theme| container::Style {
+                background: Some(Background::Color(tone.primary())),
+                border: Border {
+                    radius: theme::RADIUS_PILL.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+
+        let content = Row::new()
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .push(dot)
+            .push(
+                Text::new(tone.name())
+                    .size(12)
+                    .font(iced::Font {
+                        weight: if is_selected {
+                            iced::font::Weight::Bold
+                        } else {
+                            iced::font::Weight::Normal
+                        },
+                        ..Default::default()
+                    })
+                    .color(if is_selected {
+                        Color::WHITE
+                    } else {
+                        theme::TEXT_SECONDARY
+                    }),
+            );
+
+        let tone_btn = Button::new(content)
+            .padding([6, 12])
+            .on_press(Message::SetAccentTone(tone))
+            .style(move |_theme, status| {
+                let bg_color = if is_selected {
+                    Color {
+                        r: tone.primary().r,
+                        g: tone.primary().g,
+                        b: tone.primary().b,
+                        a: 0.20,
+                    }
+                } else {
+                    Color::TRANSPARENT
+                };
+                let border_color = if is_selected {
+                    tone.primary()
+                } else {
+                    theme::BORDER_SUBTLE
+                };
+                let base = iced::widget::button::Style {
+                    background: Some(Background::Color(bg_color)),
+                    border: Border {
+                        color: border_color,
+                        width: 1.0,
+                        radius: theme::RADIUS_PILL.into(),
+                    },
+                    ..Default::default()
+                };
+                match status {
+                    iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                        background: Some(Background::Color(Color {
+                            r: tone.primary().r,
+                            g: tone.primary().g,
+                            b: tone.primary().b,
+                            a: 0.30,
+                        })),
+                        border: Border {
+                            color: tone.primary(),
+                            width: 1.0,
+                            radius: theme::RADIUS_PILL.into(),
+                        },
+                        ..base
+                    },
+                    _ => base,
+                }
+            });
+
+        accent_picker = accent_picker.push(tone_btn);
+    }
+
     let main_col = main_col
+        .push(section_title("Theme & Accent Color Tone"))
+        .push(setting_row(
+            "Accent Color Tone",
+            "Choose your preferred accent color for highlights, badges, and controls.",
+            accent_picker.into(),
+        ))
         .push(section_title("UI Scaling & Accessibility"))
         .push(setting_row(
             "Interface Zoom",

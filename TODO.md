@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- [x] Support multidisc albums with disc groupings and disc headers in album detail view
+- [x] Support customizing application accent color tone (Spotify Green, Rust Orange, Electric Blue, Deep Purple, Rose Pink) in Settings and theme system
 
 ## Development Backlog
 
@@ -78,6 +78,7 @@
 
 - [x] Define a unified design token system (color palette, spacing scale, typography scale) in a central `theme.rs`
 - [x] Replace all ad-hoc hardcoded color literals and magic numbers with design tokens
+- [x] Support customizing application accent color tone (Spotify Green, Rust Orange, Electric Blue, Deep Purple, Rose Pink) in Settings and theme system
 - [ ] Implement smooth hover transitions on sidebar items, buttons, and playback controls
 - [x] Implement animated loading skeletons for album art, playlist headers, and track list placeholders while initial Spotify API data is fetching (zero mock/temp data, instant Spotify data render)
 - [x] Remove "Explore Premium" / "Explorar Premium" button from sidebar and navigation

@@ -220,3 +220,88 @@ pub const COLOR_SUCCESS: Color = Color {
     b: 0.45,
     a: 1.0,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+pub enum AccentTone {
+    #[default]
+    SpotifyGreen,
+    RustOrange,
+    ElectricBlue,
+    DeepPurple,
+    RosePink,
+}
+
+impl AccentTone {
+    #[must_use]
+    pub const fn primary(self) -> Color {
+        match self {
+            Self::SpotifyGreen => SPOTIFY_GREEN,
+            Self::RustOrange => ACCENT,
+            Self::ElectricBlue => Color {
+                r: 0.18,
+                g: 0.54,
+                b: 0.98,
+                a: 1.0,
+            },
+            Self::DeepPurple => Color {
+                r: 0.65,
+                g: 0.32,
+                b: 0.95,
+                a: 1.0,
+            },
+            Self::RosePink => Color {
+                r: 0.96,
+                g: 0.28,
+                b: 0.52,
+                a: 1.0,
+            },
+        }
+    }
+
+    #[allow(dead_code)]
+    #[must_use]
+    pub const fn hover(self) -> Color {
+        match self {
+            Self::SpotifyGreen => SPOTIFY_GREEN_HOVER,
+            Self::RustOrange => ACCENT_HOVER,
+            Self::ElectricBlue => Color {
+                r: 0.28,
+                g: 0.62,
+                b: 1.0,
+                a: 1.0,
+            },
+            Self::DeepPurple => Color {
+                r: 0.72,
+                g: 0.42,
+                b: 1.0,
+                a: 1.0,
+            },
+            Self::RosePink => Color {
+                r: 1.0,
+                g: 0.38,
+                b: 0.62,
+                a: 1.0,
+            },
+        }
+    }
+
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::SpotifyGreen => "Spotify Green",
+            Self::RustOrange => "Rust Orange",
+            Self::ElectricBlue => "Electric Blue",
+            Self::DeepPurple => "Deep Purple",
+            Self::RosePink => "Rose Pink",
+        }
+    }
+
+    pub const ALL: [Self; 5] = [
+        Self::SpotifyGreen,
+        Self::RustOrange,
+        Self::ElectricBlue,
+        Self::DeepPurple,
+        Self::RosePink,
+    ];
+}
+
