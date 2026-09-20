@@ -28,6 +28,7 @@ pub enum NavDestination {
     Settings,
     Playlist(String),
     Album(String),
+    Artist(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +64,18 @@ pub struct SelectedAlbumState {
     pub image_url: Option<String>,
     pub release_date: String,
     pub tracks: Vec<crate::api::album::AlbumDetailTrack>,
+    pub is_loading: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SelectedArtistState {
+    pub id: String,
+    pub name: String,
+    pub image_url: Option<String>,
+    pub genres: Vec<String>,
+    pub followers: u32,
+    pub top_tracks: Vec<crate::api::artist::ArtistTopTrack>,
+    pub albums: Vec<crate::api::artist::ArtistAlbum>,
     pub is_loading: bool,
 }
 
@@ -147,12 +160,7 @@ impl UiLanguage {
         }
     }
 
-    pub const ALL: [Self; 4] = [
-        Self::English,
-        Self::Spanish,
-        Self::Portuguese,
-        Self::German,
-    ];
+    pub const ALL: [Self; 4] = [Self::English, Self::Spanish, Self::Portuguese, Self::German];
 }
 
 pub fn save_ui_language(lang: UiLanguage) {
@@ -161,8 +169,7 @@ pub fn save_ui_language(lang: UiLanguage) {
 
 #[must_use]
 pub fn load_ui_language() -> UiLanguage {
-    crate::api::cache::DiskMetadataCache::load::<UiLanguage>("ui_language")
-        .unwrap_or_default()
+    crate::api::cache::DiskMetadataCache::load::<UiLanguage>("ui_language").unwrap_or_default()
 }
 
 pub fn save_audio_bitrate(bitrate: crate::audio::session::AudioBitrate) {
@@ -338,6 +345,7 @@ pub enum AppState {
         sidebar_filter: SidebarFilter,
         selected_playlist: Option<SelectedPlaylistState>,
         selected_album: Option<SelectedAlbumState>,
+        selected_artist: Option<SelectedArtistState>,
         user_queue: Vec<TrackInfo>,
         context_queue: Vec<TrackInfo>,
         original_context_queue: Vec<TrackInfo>,
@@ -410,6 +418,7 @@ pub enum Message {
     SelectAlbum(String),
     SelectArtist(String),
     AlbumDetailsFetched(String, Result<crate::api::album::AlbumDetail, AppError>),
+    ArtistDetailsFetched(String, Result<crate::api::artist::ArtistDetail, AppError>),
     PlayTrack(String),
     SidebarFilterSelected(SidebarFilter),
     ImageLoaded(Result<(String, Vec<u8>), AppError>),
@@ -562,12 +571,15 @@ fn get_current_destination(
     nav_item: NavigationItem,
     selected_playlist: Option<&SelectedPlaylistState>,
     selected_album: Option<&SelectedAlbumState>,
+    selected_artist: Option<&SelectedArtistState>,
     search_query: &str,
 ) -> NavDestination {
     if let Some(p) = selected_playlist {
         NavDestination::Playlist(p.id.clone())
     } else if let Some(a) = selected_album {
         NavDestination::Album(a.id.clone())
+    } else if let Some(ar) = selected_artist {
+        NavDestination::Artist(ar.id.clone())
     } else {
         match nav_item {
             NavigationItem::Search => NavDestination::Search(search_query.to_string()),
@@ -755,12 +767,14 @@ impl App {
                     nav_item,
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     ..
                 } = &mut self.state
                 {
                     *nav_item = NavigationItem::Home;
                     *selected_playlist = None;
                     *selected_album = None;
+                    *selected_artist = None;
                 }
                 Task::none()
             }
@@ -769,11 +783,13 @@ impl App {
                     nav_item,
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     ..
                 } = &mut self.state
                 {
                     *selected_playlist = None;
                     *selected_album = None;
+                    *selected_artist = None;
                     *nav_item = NavigationItem::Search;
                 }
                 self.update(Message::SearchInputChanged(query))
@@ -783,12 +799,14 @@ impl App {
                     nav_item,
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     ..
                 } = &mut self.state
                 {
                     *nav_item = NavigationItem::Library;
                     *selected_playlist = None;
                     *selected_album = None;
+                    *selected_artist = None;
                 }
                 Task::none()
             }
@@ -797,12 +815,14 @@ impl App {
                     nav_item,
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     ..
                 } = &mut self.state
                 {
                     *nav_item = NavigationItem::Settings;
                     *selected_playlist = None;
                     *selected_album = None;
+                    *selected_artist = None;
                 }
                 Task::perform(
                     async { crate::api::cache::calculate_cache_size_bytes() },
@@ -811,6 +831,7 @@ impl App {
             }
             NavDestination::Playlist(id) => self.load_playlist_internal(&id),
             NavDestination::Album(id) => self.load_album_internal(&id),
+            NavDestination::Artist(id) => self.load_artist_internal(&id),
         }
     }
 
@@ -819,6 +840,7 @@ impl App {
             user_playlists,
             selected_playlist,
             selected_album,
+            selected_artist,
             loaded_images,
             spotify_client,
             nav_item,
@@ -827,6 +849,7 @@ impl App {
         {
             *nav_item = NavigationItem::Home;
             *selected_album = None;
+            *selected_artist = None;
             let (playlist_name, image_url) = user_playlists
                 .iter()
                 .find(|p| p.id == playlist_id)
@@ -835,15 +858,14 @@ impl App {
                     |p| (p.name.clone(), p.image_url.clone()),
                 );
 
+            let mut tasks = load_image_tasks(std::iter::once(image_url.clone()), loaded_images);
             *selected_playlist = Some(SelectedPlaylistState {
                 id: playlist_id.to_string(),
                 name: playlist_name,
-                image_url: image_url.clone(),
+                image_url,
                 tracks: Vec::new(),
                 is_loading: true,
             });
-
-            let mut tasks = load_image_tasks(std::iter::once(image_url), loaded_images);
 
             if let Some(client) = spotify_client.clone() {
                 let pid = playlist_id.to_string();
@@ -870,6 +892,7 @@ impl App {
             user_albums,
             selected_album,
             selected_playlist,
+            selected_artist,
             spotify_client,
             nav_item,
             ..
@@ -877,6 +900,7 @@ impl App {
         {
             *nav_item = NavigationItem::Home;
             *selected_playlist = None;
+            *selected_artist = None;
             let (name, artist, image_url, release_date) =
                 user_albums.iter().find(|a| a.id == album_id).map_or_else(
                     || ("Album".to_string(), String::new(), None, String::new()),
@@ -908,6 +932,48 @@ impl App {
                         (aid, res)
                     },
                     |(aid, res)| Message::AlbumDetailsFetched(aid, res),
+                );
+            }
+        }
+        Task::none()
+    }
+
+    fn load_artist_internal(&mut self, artist_id: &str) -> Task<Message> {
+        if rspotify::model::ArtistId::from_id_or_uri(artist_id).is_err() {
+            return self.update(Message::SearchInputChanged(artist_id.to_string()));
+        }
+        if let AppState::Main {
+            selected_artist,
+            selected_album,
+            selected_playlist,
+            spotify_client,
+            nav_item,
+            ..
+        } = &mut self.state
+        {
+            *nav_item = NavigationItem::Home;
+            *selected_playlist = None;
+            *selected_album = None;
+
+            *selected_artist = Some(SelectedArtistState {
+                id: artist_id.to_string(),
+                name: "Artist".to_string(),
+                image_url: None,
+                genres: Vec::new(),
+                followers: 0,
+                top_tracks: Vec::new(),
+                albums: Vec::new(),
+                is_loading: true,
+            });
+
+            if let Some(client) = spotify_client.clone() {
+                let aid = artist_id.to_string();
+                return Task::perform(
+                    async move {
+                        let res = crate::api::artist::fetch_artist_details(&client, &aid).await;
+                        (aid, res)
+                    },
+                    |(aid, res)| Message::ArtistDetailsFetched(aid, res),
                 );
             }
         }
@@ -1016,6 +1082,7 @@ impl App {
                     sidebar_filter: SidebarFilter::All,
                     selected_playlist: None,
                     selected_album: None,
+                    selected_artist: None,
                     user_queue: Vec::new(),
                     context_queue: Vec::new(),
                     original_context_queue: Vec::new(),
@@ -1356,6 +1423,7 @@ impl App {
                     nav_item,
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     search_query,
                     navigation_history,
                     forward_history,
@@ -1366,6 +1434,7 @@ impl App {
                         *nav_item,
                         selected_playlist.as_ref(),
                         selected_album.as_ref(),
+                        selected_artist.as_ref(),
                         search_query,
                     );
                     push_to_history(navigation_history, curr);
@@ -1405,6 +1474,7 @@ impl App {
                     nav_item,
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     search_query,
                     navigation_history,
                     forward_history,
@@ -1415,6 +1485,7 @@ impl App {
                         *nav_item,
                         selected_playlist.as_ref(),
                         selected_album.as_ref(),
+                        selected_artist.as_ref(),
                         search_query,
                     );
                     push_to_history(navigation_history, curr);
@@ -1422,8 +1493,58 @@ impl App {
                 }
                 self.load_album_internal(&album_id)
             }
-            Message::SelectArtist(artist_name) => {
-                self.update(Message::SearchInputChanged(artist_name))
+            Message::SelectArtist(artist_id) => {
+                if let AppState::Main {
+                    nav_item,
+                    selected_playlist,
+                    selected_album,
+                    selected_artist,
+                    search_query,
+                    navigation_history,
+                    forward_history,
+                    ..
+                } = &mut self.state
+                {
+                    let curr = get_current_destination(
+                        *nav_item,
+                        selected_playlist.as_ref(),
+                        selected_album.as_ref(),
+                        selected_artist.as_ref(),
+                        search_query,
+                    );
+                    push_to_history(navigation_history, curr);
+                    forward_history.clear();
+                }
+                self.load_artist_internal(&artist_id)
+            }
+            Message::ArtistDetailsFetched(artist_id, res) => {
+                let mut tasks = Vec::new();
+                if let AppState::Main {
+                    selected_artist: Some(selected),
+                    loaded_images,
+                    ..
+                } = &mut self.state
+                {
+                    if selected.id == artist_id {
+                        selected.is_loading = false;
+                        if let Ok(detail) = res {
+                            selected.name = detail.name;
+                            selected.image_url.clone_from(&detail.image_url);
+                            selected.genres = detail.genres;
+                            selected.followers = detail.followers;
+                            selected.top_tracks = detail.top_tracks;
+                            selected.albums = detail.albums;
+                            let urls = std::iter::once(selected.image_url.clone())
+                                .chain(selected.albums.iter().map(|a| a.image_url.clone()));
+                            tasks.extend(load_image_tasks(urls, loaded_images));
+                        }
+                    }
+                }
+                if tasks.is_empty() {
+                    Task::none()
+                } else {
+                    Task::batch(tasks)
+                }
             }
             Message::AlbumDetailsFetched(album_id, res) => {
                 let mut tasks = Vec::new();
@@ -1461,6 +1582,7 @@ impl App {
                     user_top_tracks,
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     search_results,
                     loaded_images,
                     context_queue,
@@ -1513,6 +1635,31 @@ impl App {
                                 album: sa.name.clone(),
                                 duration_ms: t.duration_ms,
                                 image_url: sa.image_url.clone(),
+                                uri: t.uri.clone(),
+                                explicit: false,
+                            })
+                            .collect();
+                        if let Some(idx) = new_ctx.iter().position(|t| t.uri == uri) {
+                            *context_index = idx;
+                            found_info = Some(new_ctx[idx].clone());
+                            original_context_queue.clone_from(&new_ctx);
+                            *context_queue = new_ctx;
+                            if playback.is_shuffled && *context_index + 1 < context_queue.len() {
+                                shuffle_slice(&mut context_queue[*context_index + 1..]);
+                            }
+                        }
+                    } else if let Some(artist_state) = selected_artist {
+                        let art_name = artist_state.name.clone();
+                        let art_img = artist_state.image_url.clone();
+                        let new_ctx: Vec<TrackInfo> = artist_state
+                            .top_tracks
+                            .iter()
+                            .map(|t| TrackInfo {
+                                title: t.title.clone(),
+                                artist: art_name.clone(),
+                                album: t.album.clone(),
+                                duration_ms: t.duration_ms,
+                                image_url: art_img.clone(),
                                 uri: t.uri.clone(),
                                 explicit: false,
                             })
@@ -1592,11 +1739,13 @@ impl App {
                 if let AppState::Main {
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     ..
                 } = &mut self.state
                 {
                     *selected_playlist = None;
                     *selected_album = None;
+                    *selected_artist = None;
                 }
                 Task::none()
             }
@@ -1814,6 +1963,7 @@ impl App {
                     nav_item,
                     selected_playlist,
                     selected_album,
+                    selected_artist,
                     navigation_history,
                     forward_history,
                     search_query,
@@ -1824,6 +1974,7 @@ impl App {
                         *nav_item,
                         selected_playlist.as_ref(),
                         selected_album.as_ref(),
+                        selected_artist.as_ref(),
                         search_query,
                     );
                     push_to_history(navigation_history, curr);
@@ -1833,6 +1984,7 @@ impl App {
                     if item == NavigationItem::Home {
                         *selected_playlist = None;
                         *selected_album = None;
+                        *selected_artist = None;
                     }
                     if item == NavigationItem::Settings {
                         return Task::perform(
@@ -1849,6 +2001,7 @@ impl App {
                         nav_item,
                         selected_playlist,
                         selected_album,
+                        selected_artist,
                         search_query,
                         navigation_history,
                         forward_history,
@@ -1859,6 +2012,7 @@ impl App {
                                 *nav_item,
                                 selected_playlist.as_ref(),
                                 selected_album.as_ref(),
+                                selected_artist.as_ref(),
                                 search_query,
                             );
                             push_to_history(forward_history, curr);
@@ -1880,6 +2034,7 @@ impl App {
                         nav_item,
                         selected_playlist,
                         selected_album,
+                        selected_artist,
                         search_query,
                         navigation_history,
                         forward_history,
@@ -1890,6 +2045,7 @@ impl App {
                                 *nav_item,
                                 selected_playlist.as_ref(),
                                 selected_album.as_ref(),
+                                selected_artist.as_ref(),
                                 search_query,
                             );
                             push_to_history(navigation_history, curr);
@@ -3159,8 +3315,7 @@ impl App {
             }
             Message::ToggleGaplessPlayback => {
                 if let AppState::Main {
-                    gapless_playback,
-                    ..
+                    gapless_playback, ..
                 } = &mut self.state
                 {
                     *gapless_playback = !*gapless_playback;
@@ -3221,6 +3376,7 @@ impl App {
                 sidebar_filter,
                 selected_playlist,
                 selected_album,
+                selected_artist,
                 user_queue,
                 context_queue,
                 context_index,
@@ -3264,6 +3420,7 @@ impl App {
                 *sidebar_filter,
                 selected_playlist.as_ref(),
                 selected_album.as_ref(),
+                selected_artist.as_ref(),
                 user_queue,
                 context_queue,
                 *context_index,
@@ -3443,19 +3600,19 @@ mod tests {
     #[test]
     fn test_get_current_destination_nav_items() {
         assert_eq!(
-            get_current_destination(NavigationItem::Home, None, None, ""),
+            get_current_destination(NavigationItem::Home, None, None, None, ""),
             NavDestination::Home
         );
         assert_eq!(
-            get_current_destination(NavigationItem::Search, None, None, "daft punk"),
+            get_current_destination(NavigationItem::Search, None, None, None, "daft punk"),
             NavDestination::Search("daft punk".to_string())
         );
         assert_eq!(
-            get_current_destination(NavigationItem::Library, None, None, ""),
+            get_current_destination(NavigationItem::Library, None, None, None, ""),
             NavDestination::Library
         );
         assert_eq!(
-            get_current_destination(NavigationItem::Settings, None, None, ""),
+            get_current_destination(NavigationItem::Settings, None, None, None, ""),
             NavDestination::Settings
         );
     }
@@ -3470,7 +3627,7 @@ mod tests {
             is_loading: false,
         };
         assert_eq!(
-            get_current_destination(NavigationItem::Home, Some(&playlist), None, ""),
+            get_current_destination(NavigationItem::Home, Some(&playlist), None, None, ""),
             NavDestination::Playlist("pl123".to_string())
         );
     }
@@ -3487,8 +3644,26 @@ mod tests {
             is_loading: false,
         };
         assert_eq!(
-            get_current_destination(NavigationItem::Home, None, Some(&album), ""),
+            get_current_destination(NavigationItem::Home, None, Some(&album), None, ""),
             NavDestination::Album("alb456".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_current_destination_artist_priority() {
+        let artist = SelectedArtistState {
+            id: "art789".to_string(),
+            name: "Daft Punk".to_string(),
+            image_url: None,
+            genres: Vec::new(),
+            followers: 1000,
+            top_tracks: Vec::new(),
+            albums: Vec::new(),
+            is_loading: false,
+        };
+        assert_eq!(
+            get_current_destination(NavigationItem::Home, None, None, Some(&artist), ""),
+            NavDestination::Artist("art789".to_string())
         );
     }
 
@@ -3697,6 +3872,7 @@ mod tests {
                 sidebar_filter: SidebarFilter::All,
                 selected_playlist: None,
                 selected_album: None,
+                selected_artist: None,
                 user_queue: Vec::new(),
                 context_queue: Vec::new(),
                 original_context_queue: Vec::new(),
@@ -3840,6 +4016,7 @@ mod tests {
                 sidebar_filter: SidebarFilter::All,
                 selected_playlist: None,
                 selected_album: None,
+                selected_artist: None,
                 user_queue: Vec::new(),
                 context_queue: Vec::new(),
                 original_context_queue: Vec::new(),
