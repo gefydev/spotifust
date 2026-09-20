@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- [x] Implement Spotify-style dedicated artist page with banner, verified badge, monthly listeners, top tracks, and discography tabs
+- [x] Audit and remove all remaining mock data across all UI views and components, fetching 100% live Spotify API data
 
 ## Development Backlog
 
@@ -64,7 +64,7 @@
 - [x] Implement a metadata cache layer in `src/api/cache.rs` to avoid redundant API calls (TTL-based)
 - [x] Implement rate-limit handling: respect `Retry-After` headers from the Spotify API
 - [x] Display large cover art in playlist and album detail header views
-- [ ] Audit and remove all remaining mock data across all UI views and components, fetching 100% live Spotify API data
+- [x] Audit and remove all remaining mock data across all UI views and components, fetching 100% live Spotify API data
 - [ ] Optimize long playlist loading with incremental chunking/streaming or virtualized pagination to avoid UI lag
 - [x] Validate existing token/session before rendering initial screen to eliminate temporary login flicker
 - [x] Achieve near-instant API data loading through aggressive metadata and persistent disk caching in XDG cache dir

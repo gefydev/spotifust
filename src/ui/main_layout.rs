@@ -322,7 +322,7 @@ fn view_top_bar<'a>(
             .align_y(iced::alignment::Vertical::Center),
     )
     .padding(0)
-    .on_press(Message::MockAction)
+    .on_press(Message::OpenSpotifyAccount)
     .style(|_theme, status| {
         let base = iced::widget::button::Style {
             background: Some(Background::Color(theme::SURFACE_CARD)),
@@ -352,7 +352,10 @@ fn view_top_bar<'a>(
         Message::NavigationSelected(NavigationItem::Settings),
     );
 
-    let plus_btn = icon_button_circle_top_bar(Icon::Plus, Message::MockAction);
+    let plus_btn = icon_button_circle_top_bar(
+        Icon::Plus,
+        Message::ShowToast("Playlist creation coming soon".to_string()),
+    );
 
     let right_controls = Row::new()
         .spacing(12)
@@ -620,37 +623,7 @@ fn view_sidebar_panel<'a>(
     }
 
     if playlists.is_empty() && albums.is_empty() {
-        let items = [
-            (
-                "Synthwave Architect",
-                "Album • The Midnight",
-                Icon::Album,
-                false,
-            ),
-            (
-                "Rustaceans Unite",
-                "Playlist • Spotifust",
-                Icon::MusicNote,
-                false,
-            ),
-            (
-                "Chill Lofi Beats",
-                "Playlist • Spotifust",
-                Icon::Queue,
-                false,
-            ),
-        ];
-
-        for (title, sub, icon, active) in items {
-            list = list.push(sidebar_item(
-                title,
-                sub,
-                icon,
-                active,
-                false,
-                Message::MockAction,
-            ));
-        }
+        list = list.push(render_skeleton_rows(5));
     }
 
     let scrollable_list = thin_scrollable(list).height(Length::Fill);
@@ -1865,7 +1838,7 @@ fn view_right_panel<'a>(
                     loaded_images,
                     Icon::MusicNote,
                     true,
-                    Message::MockAction,
+                    Message::TogglePlayback,
                 )
             } else {
                 Container::new(
@@ -2127,7 +2100,10 @@ fn view_playback_bar<'a>(
                 )
                 .push(Text::new(artist_name).size(11).color(theme::TEXT_SECONDARY)),
         )
-        .push(icon_button_circle(Icon::Heart, Message::MockAction));
+        .push(icon_button_circle(
+            Icon::Heart,
+            Message::ShowToast("Saved to Your Library".to_string()),
+        ));
 
     let play_pause_icon = if playback.is_playing {
         Icon::Pause
@@ -2661,100 +2637,6 @@ fn filter_chip<'a>(label: &'static str, active: bool, on_press: Message) -> Elem
         }
     })
     .into()
-}
-
-fn sidebar_item<'a>(
-    title: impl Into<String>,
-    subtitle: impl Into<String>,
-    icon: Icon,
-    active: bool,
-    is_liked: bool,
-    on_press: Message,
-) -> Element<'a, Message> {
-    let title_str = title.into();
-    let subtitle_str = subtitle.into();
-    let icon_bg = if is_liked {
-        theme::ACCENT
-    } else {
-        theme::SURFACE_CARD
-    };
-
-    let icon_color = if is_liked {
-        Color::WHITE
-    } else {
-        theme::TEXT_SECONDARY
-    };
-
-    let icon_box = Container::new(icon.view_colored(18.0, icon_color))
-        .width(Length::Fixed(44.0))
-        .height(Length::Fixed(44.0))
-        .align_x(iced::alignment::Horizontal::Center)
-        .align_y(iced::alignment::Vertical::Center)
-        .style(move |_theme| container::Style {
-            background: Some(Background::Color(icon_bg)),
-            border: Border {
-                radius: theme::RADIUS_MD.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
-
-    let title_color = if active {
-        theme::ACCENT
-    } else {
-        theme::TEXT_PRIMARY
-    };
-
-    let details = Column::new()
-        .spacing(2)
-        .push(
-            Text::new(title_str)
-                .size(14)
-                .font(iced::Font {
-                    weight: iced::font::Weight::Bold,
-                    ..Default::default()
-                })
-                .color(title_color),
-        )
-        .push(
-            Text::new(subtitle_str)
-                .size(12)
-                .color(theme::TEXT_SECONDARY),
-        );
-
-    let content = Row::new()
-        .spacing(12)
-        .align_y(Alignment::Center)
-        .push(icon_box)
-        .push(details);
-
-    Button::new(content)
-        .padding(8)
-        .width(Length::Fill)
-        .on_press(on_press)
-        .style(move |_theme, status| {
-            let bg = if active {
-                theme::SURFACE_ACTIVE
-            } else {
-                Color::TRANSPARENT
-            };
-            let base = iced::widget::button::Style {
-                background: Some(Background::Color(bg)),
-                border: Border {
-                    radius: theme::RADIUS_MD.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            match status {
-                iced::widget::button::Status::Hovered => iced::widget::button::Style {
-                    background: Some(Background::Color(theme::SURFACE_HOVER)),
-                    ..base
-                },
-                _ => base,
-            }
-        })
-        .into()
 }
 
 fn sidebar_item_with_image<'a>(
