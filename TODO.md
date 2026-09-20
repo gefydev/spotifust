@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- [x] Audit and remove all remaining mock data across all UI views and components, fetching 100% live Spotify API data
+- [x] Eliminate progress bar jumps and sync position directly with audio stream
 
 ## Development Backlog
 
@@ -111,7 +111,7 @@
 - [x] Implement "Add to queue" action from track context menus
 - [x] Implement track reordering and control within the play queue view
 - [x] Implement Spotify-style structured User Queue, Context Queue, and playback History stack
-- [ ] Eliminate progress bar jumps and sync position directly with audio stream
+- [x] Eliminate progress bar jumps and sync position directly with audio stream
 - [ ] Spotify Connect: Full bi-directional Spotify Connect integration for remote control and device sync
 - [ ] Crossfade: Smooth audio crossfade between tracks (configurable duration in Settings)
 - [ ] Implement multi-band DSP Audio Equalizer with presets (Flat, Bass Boost, Vocal, Rock, Pop) integrated into `rodio` audio pipeline
