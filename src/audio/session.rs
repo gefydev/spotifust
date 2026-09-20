@@ -57,7 +57,7 @@ pub async fn connect_with_token(access_token: &str) -> Result<AudioSession, AppE
         .map_err(|e| AppError::Playback(format!("Librespot login failed: {e}")))?;
 
     let player_config = PlayerConfig {
-        bitrate: Bitrate::Bitrate320,
+        bitrate: Bitrate::Bitrate160,
         ..PlayerConfig::default()
     };
 
@@ -104,7 +104,6 @@ pub async fn connect_with_token(access_token: &str) -> Result<AudioSession, AppE
                                     match SpotifyUri::from_uri(&uri_to_parse) {
                                         Ok(spotify_uri) => {
                                             player_cmd.load(spotify_uri, true, 0);
-                                            player_cmd.play();
                                             is_playing = true;
                                             position_ms = 0;
                                             last_update = tokio::time::Instant::now();

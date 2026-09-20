@@ -933,7 +933,7 @@ fn view_main_content<'a>(
             .on_press(Message::PlayTrack(first_uri))
             .style(|_t, status| {
                 let base = iced::widget::button::Style {
-                    background: Some(Background::Color(theme::ACCENT)),
+                    background: Some(Background::Color(theme::SPOTIFY_GREEN)),
                     border: Border {
                         radius: 28.0.into(),
                         ..Default::default()
@@ -946,9 +946,12 @@ fn view_main_content<'a>(
                     ..Default::default()
                 };
                 match status {
-                    iced::widget::button::Status::Hovered
-                    | iced::widget::button::Status::Pressed => iced::widget::button::Style {
-                        background: Some(Background::Color(Color::from_rgb(0.15, 0.85, 0.40))),
+                    iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                        background: Some(Background::Color(theme::SPOTIFY_GREEN_HOVER)),
+                        ..base
+                    },
+                    iced::widget::button::Status::Pressed => iced::widget::button::Style {
+                        background: Some(Background::Color(theme::SPOTIFY_GREEN_PRESSED)),
                         ..base
                     },
                     _ => base,
@@ -1152,7 +1155,7 @@ fn view_main_content<'a>(
             .on_press(Message::PlayTrack(first_uri))
             .style(|_t, status| {
                 let base = iced::widget::button::Style {
-                    background: Some(Background::Color(theme::ACCENT)),
+                    background: Some(Background::Color(theme::SPOTIFY_GREEN)),
                     border: Border {
                         radius: 28.0.into(),
                         ..Default::default()
@@ -1165,9 +1168,12 @@ fn view_main_content<'a>(
                     ..Default::default()
                 };
                 match status {
-                    iced::widget::button::Status::Hovered
-                    | iced::widget::button::Status::Pressed => iced::widget::button::Style {
-                        background: Some(Background::Color(Color::from_rgb(0.15, 0.85, 0.40))),
+                    iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                        background: Some(Background::Color(theme::SPOTIFY_GREEN_HOVER)),
+                        ..base
+                    },
+                    iced::widget::button::Status::Pressed => iced::widget::button::Style {
+                        background: Some(Background::Color(theme::SPOTIFY_GREEN_PRESSED)),
                         ..base
                     },
                     _ => base,
