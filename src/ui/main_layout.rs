@@ -226,10 +226,16 @@ fn view_top_bar<'a>(
                 .color(theme::TEXT_PRIMARY),
         );
 
-    let back_btn =
-        icon_button_circle_disabled(Icon::ChevronLeft, Message::NavigateBack, can_go_back);
-    let forward_btn =
-        icon_button_circle_disabled(Icon::ChevronRight, Message::NavigateForward, can_go_forward);
+    let back_btn = icon_button_circle_disabled_top_bar(
+        Icon::ChevronLeft,
+        Message::NavigateBack,
+        can_go_back,
+    );
+    let forward_btn = icon_button_circle_disabled_top_bar(
+        Icon::ChevronRight,
+        Message::NavigateForward,
+        can_go_forward,
+    );
 
     let home_btn = icon_button_circle_active(
         Icon::Home,
@@ -298,24 +304,51 @@ fn view_top_bar<'a>(
         theme::RADIUS_PILL,
     );
 
-    let user_avatar_btn = Button::new(user_avatar_content)
-        .padding(0)
-        .on_press(Message::MockAction)
-        .style(|_theme, _status| iced::widget::button::Style {
-            background: Some(Background::Color(Color::TRANSPARENT)),
+    let user_avatar_btn = Button::new(
+        Container::new(user_avatar_content)
+            .width(Length::Fixed(40.0))
+            .height(Length::Fixed(40.0))
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center),
+    )
+    .padding(0)
+    .on_press(Message::MockAction)
+    .style(|_theme, status| {
+        let base = iced::widget::button::Style {
+            background: Some(Background::Color(theme::SURFACE_CARD)),
+            border: Border {
+                radius: theme::RADIUS_PILL.into(),
+                color: theme::BORDER_SUBTLE,
+                width: 1.0,
+            },
             ..Default::default()
-        });
+        };
+        match status {
+            iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                background: Some(Background::Color(theme::SURFACE_HOVER)),
+                border: Border {
+                    radius: theme::RADIUS_PILL.into(),
+                    color: theme::TEXT_SECONDARY,
+                    width: 1.0,
+                },
+                ..base
+            },
+            _ => base,
+        }
+    });
 
-    let settings_btn = icon_button_circle(
+    let settings_btn = icon_button_circle_top_bar(
         Icon::Settings,
         Message::NavigationSelected(NavigationItem::Settings),
     );
+
+    let plus_btn = icon_button_circle_top_bar(Icon::Plus, Message::MockAction);
 
     let right_controls = Row::new()
         .spacing(12)
         .align_y(Alignment::Center)
         .push(settings_btn)
-        .push(icon_button_circle(Icon::Plus, Message::MockAction))
+        .push(plus_btn)
         .push(user_avatar_btn);
 
     Container::new(
@@ -2313,24 +2346,62 @@ fn icon_button_circle<'a>(icon: Icon, message: Message) -> Element<'a, Message> 
     .into()
 }
 
-fn icon_button_circle_disabled<'a>(
+
+fn icon_button_circle_top_bar<'a>(icon: Icon, message: Message) -> Element<'a, Message> {
+    Button::new(
+        Container::new(icon.view_colored(18.0, theme::TEXT_SECONDARY))
+            .width(Length::Fixed(40.0))
+            .height(Length::Fixed(40.0))
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center),
+    )
+    .padding(0)
+    .on_press(message)
+    .style(|_theme, status| {
+        let base = iced::widget::button::Style {
+            background: Some(Background::Color(theme::SURFACE_CARD)),
+            border: Border {
+                radius: theme::RADIUS_PILL.into(),
+                color: theme::BORDER_SUBTLE,
+                width: 1.0,
+            },
+            ..Default::default()
+        };
+        match status {
+            iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                background: Some(Background::Color(theme::SURFACE_HOVER)),
+                border: Border {
+                    radius: theme::RADIUS_PILL.into(),
+                    color: theme::TEXT_SECONDARY,
+                    width: 1.0,
+                },
+                ..base
+            },
+            _ => base,
+        }
+    })
+    .into()
+}
+
+fn icon_button_circle_disabled_top_bar<'a>(
     icon: Icon,
     message: Message,
     enabled: bool,
 ) -> Element<'a, Message> {
     if enabled {
-        icon_button_circle(icon, message)
+        icon_button_circle_top_bar(icon, message)
     } else {
-        Container::new(icon.view_colored(16.0, theme::TEXT_MUTED))
-            .width(Length::Fixed(32.0))
-            .height(Length::Fixed(32.0))
+        Container::new(icon.view_colored(18.0, theme::TEXT_MUTED))
+            .width(Length::Fixed(40.0))
+            .height(Length::Fixed(40.0))
             .align_x(iced::alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center)
             .style(|_theme| container::Style {
                 background: Some(Background::Color(Color::from_rgba(0.12, 0.12, 0.12, 0.5))),
                 border: Border {
                     radius: theme::RADIUS_PILL.into(),
-                    ..Default::default()
+                    color: theme::BORDER_SUBTLE,
+                    width: 1.0,
                 },
                 ..Default::default()
             })
