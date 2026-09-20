@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- [x] Fix session loss handling, purge cache on expiry, prevent login flicker and polish non-card login UI
+- [x] Make profile avatar circular matching header icon buttons with uniform height across all top bar items
 
 ## Development Backlog
 
@@ -91,7 +91,7 @@
 - [x] Add toast / snackbar notifications for user-facing errors and confirmations
 - [x] Audit and refine all font sizes, weights, and line heights for visual consistency
 - [ ] Ensure the entire UI is navigable via keyboard (tab order, focus rings)
-- [ ] Make profile avatar circular matching header icon buttons with uniform height across all top bar items
+- [x] Make profile avatar circular matching header icon buttons with uniform height across all top bar items
 - [x] SETTINGS PAGE: Build base Settings page layout frame
 - [x] LYRICS: Implement base Lyrics view layout frame
 - [x] Integrate LRCLIB REST API for millisecond-synced `.lrc` lyrics auto-scrolling with Genius plain lyrics fallback
