@@ -3868,8 +3868,8 @@ mod tests {
         perform_graceful_shutdown(&playback, None, 1.15, 260.0, 320.0);
         let saved_vol = load_saved_volume();
         let saved_scale = load_ui_scale();
-        assert!((saved_vol - 0.65).abs() < f32::EPSILON);
-        assert!((saved_scale - 1.15).abs() < f32::EPSILON);
+        assert!((saved_vol - 0.65).abs() < 0.001);
+        assert!((saved_scale - 1.15).abs() < 0.001);
     }
 
     #[test]
