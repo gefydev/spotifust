@@ -81,7 +81,7 @@ impl AudioBitrate {
 
 #[allow(dead_code)]
 pub async fn connect_with_token(access_token: &str) -> Result<AudioSession, AppError> {
-    connect_with_token_and_config(access_token, AudioBitrate::default(), true).await
+    connect_with_token_and_config(access_token, AudioBitrate::default(), true, true).await
 }
 
 #[allow(dead_code)]
@@ -89,7 +89,7 @@ pub async fn connect_with_token_and_bitrate(
     access_token: &str,
     bitrate: AudioBitrate,
 ) -> Result<AudioSession, AppError> {
-    connect_with_token_and_config(access_token, bitrate, true).await
+    connect_with_token_and_config(access_token, bitrate, true, true).await
 }
 
 #[allow(clippy::too_many_lines)]
@@ -97,6 +97,7 @@ pub async fn connect_with_token_and_config(
     access_token: &str,
     bitrate: AudioBitrate,
     normalisation: bool,
+    gapless: bool,
 ) -> Result<AudioSession, AppError> {
     let credentials = Credentials::with_access_token(access_token);
     let session_config = SessionConfig::default();
@@ -110,6 +111,7 @@ pub async fn connect_with_token_and_config(
     let player_config = PlayerConfig {
         bitrate: bitrate.to_librespot_bitrate(),
         normalisation,
+        gapless,
         ..PlayerConfig::default()
     };
 
