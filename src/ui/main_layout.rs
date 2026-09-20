@@ -95,6 +95,7 @@ pub fn view<'a>(
     allow_explicit_content: bool,
     ui_scale: f32,
     accent_tone: crate::ui::theme::AccentTone,
+    ui_language: crate::app::UiLanguage,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
@@ -135,6 +136,8 @@ pub fn view<'a>(
         allow_explicit_content,
         ui_scale,
         accent_tone,
+        user_profile,
+        ui_language,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -687,6 +690,8 @@ fn view_main_content<'a>(
     allow_explicit_content: bool,
     ui_scale: f32,
     accent_tone: crate::ui::theme::AccentTone,
+    user_profile: Option<&'a crate::api::user::UserProfile>,
+    ui_language: crate::app::UiLanguage,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
         return view_settings_page(
@@ -695,6 +700,8 @@ fn view_main_content<'a>(
             allow_explicit_content,
             ui_scale,
             accent_tone,
+            user_profile,
+            ui_language,
         );
     }
 
@@ -3620,10 +3627,12 @@ fn view_settings_page<'a>(
     allow_explicit_content: bool,
     ui_scale: f32,
     accent_tone: crate::ui::theme::AccentTone,
+    user_profile: Option<&'a crate::api::user::UserProfile>,
+    ui_language: crate::app::UiLanguage,
 ) -> Element<'a, Message> {
     fn setting_row<'a>(
         title: &'static str,
-        desc: &'static str,
+        desc: impl iced::advanced::text::IntoFragment<'a>,
         control: Element<'a, Message>,
     ) -> Element<'a, Message> {
         Row::new()
@@ -3783,9 +3792,139 @@ fn view_settings_page<'a>(
         ..Default::default()
     });
 
+    let (account_name, plan_desc) = match user_profile {
+        Some(p) => (
+            p.display_name.as_str(),
+            p.product.as_deref().unwrap_or("Spotify Account"),
+        ),
+        None => ("Connected User", "Spotify Account"),
+    };
+
+    let manage_btn = Button::new(
+        Row::new()
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .push(
+                Text::new("Manage on Spotify")
+                    .size(13)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(Color::WHITE),
+            )
+            .push(Icon::ChevronRight.view_colored(14.0, Color::WHITE)),
+    )
+    .padding([8, 16])
+    .on_press(Message::OpenSpotifyAccount)
+    .style(move |_theme, status| {
+        let base = iced::widget::button::Style {
+            background: Some(Background::Color(theme::SURFACE_CARD)),
+            border: Border {
+                color: theme::BORDER_SUBTLE,
+                width: 1.0,
+                radius: theme::RADIUS_PILL.into(),
+            },
+            ..Default::default()
+        };
+        match status {
+            iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                background: Some(Background::Color(theme::SURFACE_HOVER)),
+                border: Border {
+                    color: Color::WHITE,
+                    width: 1.0,
+                    radius: theme::RADIUS_PILL.into(),
+                },
+                ..base
+            },
+            _ => base,
+        }
+    });
+
+    let mut lang_picker = Row::new().spacing(8).align_y(Alignment::Center);
+    for lang in crate::app::UiLanguage::ALL {
+        let is_selected = lang == ui_language;
+        let lang_btn = Button::new(
+            Text::new(lang.name())
+                .size(12)
+                .font(iced::Font {
+                    weight: if is_selected {
+                        iced::font::Weight::Bold
+                    } else {
+                        iced::font::Weight::Normal
+                    },
+                    ..Default::default()
+                })
+                .color(if is_selected {
+                    Color::WHITE
+                } else {
+                    theme::TEXT_SECONDARY
+                }),
+        )
+        .padding([6, 14])
+        .on_press(Message::SetUiLanguage(lang))
+        .style(move |_theme, status| {
+            let bg_color = if is_selected {
+                Color {
+                    r: accent_tone.primary().r,
+                    g: accent_tone.primary().g,
+                    b: accent_tone.primary().b,
+                    a: 0.20,
+                }
+            } else {
+                Color::TRANSPARENT
+            };
+            let border_color = if is_selected {
+                accent_tone.primary()
+            } else {
+                theme::BORDER_SUBTLE
+            };
+            let base = iced::widget::button::Style {
+                background: Some(Background::Color(bg_color)),
+                border: Border {
+                    color: border_color,
+                    width: 1.0,
+                    radius: theme::RADIUS_PILL.into(),
+                },
+                ..Default::default()
+            };
+            match status {
+                iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                    background: Some(Background::Color(Color {
+                        r: accent_tone.primary().r,
+                        g: accent_tone.primary().g,
+                        b: accent_tone.primary().b,
+                        a: 0.30,
+                    })),
+                    border: Border {
+                        color: accent_tone.primary(),
+                        width: 1.0,
+                        radius: theme::RADIUS_PILL.into(),
+                    },
+                    ..base
+                },
+                _ => base,
+            }
+        });
+        lang_picker = lang_picker.push(lang_btn);
+    }
+
+    let account_summary = format!("{account_name} • {plan_desc}");
     let main_col = Column::new()
         .spacing(24)
         .push(header)
+        .push(section_title("Account & Profile"))
+        .push(setting_row(
+            "Spotify Account",
+            account_summary,
+            manage_btn.into(),
+        ))
+        .push(section_title("Language & Region"))
+        .push(setting_row(
+            "Interface Language",
+            "Choose your display language for application menus and controls.",
+            lang_picker.into(),
+        ))
         .push(section_title("Explicit Content"))
         .push(setting_row(
             "Allow Explicit Content",
