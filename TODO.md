@@ -1,5 +1,9 @@
 # Project State Machine
 
+## Current Focus
+
+- [x] Fix session loss handling, purge cache on expiry, prevent login flicker and polish non-card login UI
+
 ## Development Backlog
 
 ### Phase 1: Bootstrapping & Core Architecture
@@ -66,6 +70,7 @@
 - [x] Achieve near-instant API data loading through aggressive metadata and persistent disk caching in XDG cache dir
 - [ ] Implement real local audio file scanner and rodio playback for custom local music directory path
 - [x] Implement Track & Artist Radio / Recommendations endpoint (`GET /v1/recommendations`, "Made for You", "New Releases")
+- [x] Fix session loss handling, purge cache on expiry, prevent login flicker and polish non-card login UI
 
 ### Phase 5: UI Design System, Component Polish & Settings Page
 
