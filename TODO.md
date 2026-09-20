@@ -71,6 +71,8 @@
 - [ ] Implement real local audio file scanner and rodio playback for custom local music directory path
 - [x] Implement Track & Artist Radio / Recommendations endpoint (`GET /v1/recommendations`, "Made for You", "New Releases")
 - [x] Fix session loss handling, purge cache on expiry, prevent login flicker and polish non-card login UI
+- [ ] Support multidisc albums with disc groupings and disc headers in album detail view
+- [ ] Implement Spotify-style dedicated artist page with banner, verified badge, monthly listeners, top tracks, and discography tabs
 
 ### Phase 5: UI Design System, Component Polish & Settings Page
 
@@ -89,6 +91,7 @@
 - [x] Add toast / snackbar notifications for user-facing errors and confirmations
 - [x] Audit and refine all font sizes, weights, and line heights for visual consistency
 - [ ] Ensure the entire UI is navigable via keyboard (tab order, focus rings)
+- [ ] Make profile avatar circular matching header icon buttons with uniform height across all top bar items
 - [x] SETTINGS PAGE: Build base Settings page layout frame
 - [x] LYRICS: Implement base Lyrics view layout frame
 - [x] Integrate LRCLIB REST API for millisecond-synced `.lrc` lyrics auto-scrolling with Genius plain lyrics fallback
