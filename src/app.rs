@@ -117,6 +117,16 @@ pub fn load_ui_scale() -> f32 {
         .clamp(0.70, 1.30)
 }
 
+pub fn save_accent_tone(tone: crate::ui::theme::AccentTone) {
+    let _ = crate::api::cache::DiskMetadataCache::save("accent_tone", &tone);
+}
+
+#[must_use]
+pub fn load_accent_tone() -> crate::ui::theme::AccentTone {
+    crate::api::cache::DiskMetadataCache::load::<crate::ui::theme::AccentTone>("accent_tone")
+        .unwrap_or_default()
+}
+
 pub fn load_last_playback_state(playback: &mut PlaybackState) {
     let saved_vol = load_saved_volume();
     playback.volume = saved_vol;
@@ -288,6 +298,7 @@ pub enum AppState {
         cache_size_bytes: u64,
         allow_explicit_content: bool,
         ui_scale: f32,
+        accent_tone: crate::ui::theme::AccentTone,
     },
 }
 
@@ -424,6 +435,7 @@ pub enum Message {
     SetUiScale(f32),
     AdjustUiScale(f32),
     ResetUiScale,
+    SetAccentTone(crate::ui::theme::AccentTone),
     AppCloseRequested,
 }
 
@@ -955,6 +967,7 @@ impl App {
                     cache_size_bytes: 0,
                     allow_explicit_content: true,
                     ui_scale: load_ui_scale(),
+                    accent_tone: load_accent_tone(),
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -3021,6 +3034,13 @@ impl App {
                 }
                 Task::none()
             }
+            Message::SetAccentTone(tone) => {
+                if let AppState::Main { accent_tone, .. } = &mut self.state {
+                    *accent_tone = tone;
+                    save_accent_tone(tone);
+                }
+                Task::none()
+            }
             Message::AppCloseRequested => {
                 if let AppState::Main {
                     playback,
@@ -3093,6 +3113,7 @@ impl App {
                 cache_size_bytes,
                 allow_explicit_content,
                 ui_scale,
+                accent_tone,
                 ..
             } => crate::ui::main_layout::view(
                 nav_item,
@@ -3131,6 +3152,7 @@ impl App {
                 *cache_size_bytes,
                 *allow_explicit_content,
                 *ui_scale,
+                *accent_tone,
             ),
         };
 
@@ -3568,6 +3590,7 @@ mod tests {
                 cache_size_bytes: 0,
                 allow_explicit_content: true,
                 ui_scale: 1.0,
+                accent_tone: crate::ui::theme::AccentTone::default(),
             },
             audio_tx,
             active_error: Some("Old error".to_string()),
@@ -3706,6 +3729,7 @@ mod tests {
                 cache_size_bytes: 0,
                 allow_explicit_content: true,
                 ui_scale: 1.0,
+                accent_tone: crate::ui::theme::AccentTone::default(),
             },
             audio_tx,
             active_error: None,
@@ -3731,5 +3755,15 @@ mod tests {
             }
             _ => panic!("Expected to remain in AppState::Main"),
         }
+    }
+
+    #[test]
+    fn test_accent_tone_update_and_persistence() {
+        save_accent_tone(crate::ui::theme::AccentTone::ElectricBlue);
+        assert_eq!(
+            load_accent_tone(),
+            crate::ui::theme::AccentTone::ElectricBlue
+        );
+        save_accent_tone(crate::ui::theme::AccentTone::default());
     }
 }
