@@ -304,4 +304,3 @@ impl AccentTone {
         Self::RosePink,
     ];
 }
-

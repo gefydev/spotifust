@@ -75,6 +75,7 @@ pub fn view<'a>(
     sidebar_filter: SidebarFilter,
     selected_playlist: Option<&'a crate::app::SelectedPlaylistState>,
     selected_album: Option<&'a crate::app::SelectedAlbumState>,
+    selected_artist: Option<&'a crate::app::SelectedArtistState>,
     user_queue: &'a [crate::app::TrackInfo],
     context_queue: &'a [crate::app::TrackInfo],
     context_index: usize,
@@ -125,6 +126,7 @@ pub fn view<'a>(
         *nav_item,
         selected_playlist,
         selected_album,
+        selected_artist,
         user_playlists,
         user_albums,
         user_top_tracks,
@@ -237,11 +239,8 @@ fn view_top_bar<'a>(
                 .color(theme::TEXT_PRIMARY),
         );
 
-    let back_btn = icon_button_circle_disabled_top_bar(
-        Icon::ChevronLeft,
-        Message::NavigateBack,
-        can_go_back,
-    );
+    let back_btn =
+        icon_button_circle_disabled_top_bar(Icon::ChevronLeft, Message::NavigateBack, can_go_back);
     let forward_btn = icon_button_circle_disabled_top_bar(
         Icon::ChevronRight,
         Message::NavigateForward,
@@ -686,6 +685,7 @@ fn view_main_content<'a>(
     current_nav: NavigationItem,
     selected_playlist: Option<&'a crate::app::SelectedPlaylistState>,
     selected_album: Option<&'a crate::app::SelectedAlbumState>,
+    selected_artist: Option<&'a crate::app::SelectedArtistState>,
     user_playlists: &'a [crate::api::playlist::PlaylistSummary],
     user_albums: &'a [crate::api::album::AlbumSummary],
     user_top_tracks: &'a [crate::api::tracks::TopTrack],
@@ -1310,6 +1310,10 @@ fn view_main_content<'a>(
                 ..Default::default()
             })
             .into();
+    }
+
+    if let Some(artist_state) = selected_artist {
+        return view_artist_detail_page(artist_state, loaded_images, accent_tone);
     }
 
     let title_text = match current_nav {
@@ -2401,7 +2405,6 @@ fn icon_button_circle<'a>(icon: Icon, message: Message) -> Element<'a, Message> 
     .into()
 }
 
-
 fn icon_button_circle_top_bar<'a>(icon: Icon, message: Message) -> Element<'a, Message> {
     Button::new(
         Container::new(icon.view_colored(18.0, theme::TEXT_SECONDARY))
@@ -2947,6 +2950,385 @@ fn format_duration(ms: u32) -> String {
     let mins = total_secs / 60;
     let secs = total_secs % 60;
     format!("{mins}:{secs:02}")
+}
+
+fn format_followers(n: u32) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len();
+    for (i, c) in chars.into_iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result
+}
+
+fn capitalize_words(s: &str) -> String {
+    s.split_whitespace()
+        .map(|w| {
+            let mut c = w.chars();
+            match c.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[allow(clippy::too_many_lines)]
+fn view_artist_detail_page<'a>(
+    artist: &'a crate::app::SelectedArtistState,
+    loaded_images: &'a std::collections::HashMap<String, iced::widget::image::Handle>,
+    accent_tone: crate::ui::theme::AccentTone,
+) -> Element<'a, Message> {
+    let artist_cover = view_image_or_icon(
+        artist.image_url.as_deref(),
+        loaded_images,
+        Icon::User,
+        200.0,
+        100.0,
+    );
+
+    let mut info_col = Column::new().spacing(8);
+
+    let verified_badge = Row::new()
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .push(
+            Container::new(
+                Text::new("✓")
+                    .size(12)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(Color::WHITE),
+            )
+            .width(Length::Fixed(18.0))
+            .height(Length::Fixed(18.0))
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
+            .style(|_theme| container::Style {
+                background: Some(Background::Color(Color {
+                    r: 0.18,
+                    g: 0.54,
+                    b: 0.98,
+                    a: 1.0,
+                })),
+                border: Border {
+                    radius: 9.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+        )
+        .push(
+            Text::new("Verified Artist")
+                .size(13)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                })
+                .color(theme::TEXT_PRIMARY),
+        );
+
+    info_col = info_col.push(verified_badge);
+
+    info_col = info_col.push(
+        Text::new(&artist.name)
+            .size(48)
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..Default::default()
+            })
+            .color(theme::TEXT_PRIMARY),
+    );
+
+    let followers_str = format!("{} monthly listeners", format_followers(artist.followers));
+    info_col = info_col.push(
+        Text::new(followers_str)
+            .size(14)
+            .color(theme::TEXT_SECONDARY),
+    );
+
+    if !artist.genres.is_empty() {
+        let genre_text = artist
+            .genres
+            .iter()
+            .take(3)
+            .map(|g| capitalize_words(g))
+            .collect::<Vec<_>>()
+            .join(" • ");
+        info_col = info_col.push(Text::new(genre_text).size(12).color(theme::TEXT_MUTED));
+    }
+
+    let header_row = Row::new()
+        .spacing(28)
+        .align_y(Alignment::Center)
+        .push(artist_cover)
+        .push(info_col);
+
+    let action_row: Element<'a, Message> = if let Some(first_track) = artist.top_tracks.first() {
+        let first_uri = first_track.uri.clone();
+        let play_btn = Button::new(
+            Container::new(Icon::Play.view_colored(24.0, Color::BLACK))
+                .width(Length::Fixed(56.0))
+                .height(Length::Fixed(56.0))
+                .align_x(iced::alignment::Horizontal::Center)
+                .align_y(iced::alignment::Vertical::Center),
+        )
+        .padding(0)
+        .on_press(Message::PlayTrack(first_uri))
+        .style(move |_t, status| {
+            let base = iced::widget::button::Style {
+                background: Some(Background::Color(accent_tone.primary())),
+                border: Border {
+                    radius: 28.0.into(),
+                    ..Default::default()
+                },
+                shadow: iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                    offset: iced::Vector::new(0.0, 4.0),
+                    blur_radius: 12.0,
+                },
+                ..Default::default()
+            };
+            match status {
+                iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                    background: Some(Background::Color(accent_tone.hover())),
+                    ..base
+                },
+                _ => base,
+            }
+        });
+
+        let follow_btn = Button::new(
+            Text::new("Follow")
+                .size(13)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Bold,
+                    ..Default::default()
+                })
+                .color(theme::TEXT_PRIMARY),
+        )
+        .padding([8, 20])
+        .style(|_t, status| {
+            let base = iced::widget::button::Style {
+                background: Some(Background::Color(Color::TRANSPARENT)),
+                border: Border {
+                    color: theme::BORDER_SUBTLE,
+                    width: 1.0,
+                    radius: 16.0.into(),
+                },
+                ..Default::default()
+            };
+            match status {
+                iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                    border: Border {
+                        color: theme::TEXT_PRIMARY,
+                        width: 1.0,
+                        radius: 16.0.into(),
+                    },
+                    ..base
+                },
+                _ => base,
+            }
+        });
+
+        Row::new()
+            .spacing(16)
+            .align_y(Alignment::Center)
+            .push(play_btn)
+            .push(follow_btn)
+            .into()
+    } else {
+        Space::new().height(Length::Fixed(0.0)).into()
+    };
+
+    let content_body: Element<'a, Message> = if artist.is_loading {
+        render_skeleton_rows(6)
+    } else {
+        let mut sections = Column::new().spacing(32);
+
+        if !artist.top_tracks.is_empty() {
+            let mut tracks_col = Column::new().spacing(4);
+            tracks_col = tracks_col.push(
+                Text::new("Popular")
+                    .size(22)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(theme::TEXT_PRIMARY),
+            );
+
+            for (idx, track) in artist.top_tracks.iter().take(5).enumerate() {
+                let track_num = (idx + 1).to_string();
+                let dur_str = format_duration(track.duration_ms);
+                let uri = track.uri.clone();
+
+                let img = view_image_or_icon(
+                    artist.image_url.as_deref(),
+                    loaded_images,
+                    Icon::MusicNote,
+                    40.0,
+                    4.0,
+                );
+
+                let track_info = crate::app::TrackInfo {
+                    title: track.title.clone(),
+                    artist: artist.name.clone(),
+                    album: track.album.clone(),
+                    duration_ms: track.duration_ms,
+                    image_url: artist.image_url.clone(),
+                    uri: track.uri.clone(),
+                    explicit: false,
+                };
+
+                let row_content = Row::new()
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .push(
+                        Text::new(track_num)
+                            .size(13)
+                            .color(theme::TEXT_SECONDARY)
+                            .width(Length::Fixed(20.0)),
+                    )
+                    .push(img)
+                    .push(
+                        Column::new()
+                            .spacing(2)
+                            .push(
+                                Text::new(&track.title)
+                                    .size(14)
+                                    .font(iced::Font {
+                                        weight: iced::font::Weight::Bold,
+                                        ..Default::default()
+                                    })
+                                    .color(theme::TEXT_PRIMARY),
+                            )
+                            .push(Text::new(&track.album).size(12).color(theme::TEXT_MUTED))
+                            .width(Length::Fill),
+                    )
+                    .push(
+                        Text::new(dur_str)
+                            .size(13)
+                            .color(theme::TEXT_SECONDARY)
+                            .width(Length::Fixed(50.0)),
+                    );
+
+                let track_btn = Button::new(row_content)
+                    .padding([6, 10])
+                    .width(Length::Fill)
+                    .on_press(Message::PlayTrack(uri))
+                    .style(|_theme, status| {
+                        let bg = match status {
+                            iced::widget::button::Status::Hovered => {
+                                Some(Background::Color(theme::SURFACE_HOVER))
+                            }
+                            iced::widget::button::Status::Pressed => {
+                                Some(Background::Color(theme::SURFACE_ACTIVE))
+                            }
+                            _ => None,
+                        };
+                        iced::widget::button::Style {
+                            background: bg,
+                            border: Border {
+                                radius: theme::RADIUS_SM.into(),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        }
+                    });
+
+                let item_with_context = iced::widget::mouse_area(track_btn).on_right_press(
+                    Message::OpenTrackContextMenu {
+                        track: track_info,
+                        from_playlist_id: None,
+                        position: iced::Point::new(450.0, 300.0),
+                    },
+                );
+
+                tracks_col = tracks_col.push(item_with_context);
+            }
+
+            sections = sections.push(tracks_col);
+        }
+
+        if !artist.albums.is_empty() {
+            let mut discog_col = Column::new().spacing(12);
+            discog_col = discog_col.push(
+                Text::new("Discography")
+                    .size(22)
+                    .font(iced::Font {
+                        weight: iced::font::Weight::Bold,
+                        ..Default::default()
+                    })
+                    .color(theme::TEXT_PRIMARY),
+            );
+
+            let mut albums_row = Row::new().spacing(16);
+            for album in artist.albums.iter().take(8) {
+                let alb_id = album.id.clone();
+                let subtitle = if album.release_date.len() >= 4 {
+                    format!("{} • Album", &album.release_date[..4])
+                } else {
+                    "Album".to_string()
+                };
+                albums_row = albums_row.push(media_card_with_image(
+                    &album.name,
+                    &subtitle,
+                    album.image_url.as_deref(),
+                    loaded_images,
+                    Icon::Album,
+                    Message::SelectAlbum(alb_id),
+                ));
+            }
+
+            discog_col = discog_col.push(scroll_row(albums_row));
+            sections = sections.push(discog_col);
+        }
+
+        sections.into()
+    };
+
+    let page_column = Column::new()
+        .spacing(24)
+        .push(header_row)
+        .push(action_row)
+        .push(content_body);
+
+    let scrollable = thin_scrollable(Container::new(page_column).padding(iced::Padding {
+        top: 0.0,
+        right: 16.0,
+        bottom: 0.0,
+        left: 0.0,
+    }))
+    .direction(iced::widget::scrollable::Direction::Vertical(
+        iced::widget::scrollable::Scrollbar::new()
+            .width(6.0)
+            .margin(2.0)
+            .scroller_width(6.0),
+    ))
+    .height(Length::Fill);
+
+    Container::new(scrollable)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(24)
+        .style(|_theme: &Theme| container::Style {
+            background: Some(Background::Color(theme::SURFACE_MAIN)),
+            border: Border {
+                radius: theme::RADIUS_LG.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
 }
 
 #[allow(clippy::too_many_lines)]

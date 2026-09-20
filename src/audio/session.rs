@@ -72,11 +72,7 @@ impl AudioBitrate {
         }
     }
 
-    pub const ALL: [Self; 3] = [
-        Self::Normal96k,
-        Self::High160k,
-        Self::VeryHigh320k,
-    ];
+    pub const ALL: [Self; 3] = [Self::Normal96k, Self::High160k, Self::VeryHigh320k];
 }
 
 #[allow(dead_code)]

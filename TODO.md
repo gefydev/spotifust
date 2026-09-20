@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- [x] Implement Gapless Playback transition between tracks with player configuration and settings toggle
+- [x] Implement Spotify-style dedicated artist page with banner, verified badge, monthly listeners, top tracks, and discography tabs
 
 ## Development Backlog
 
@@ -72,7 +72,7 @@
 - [x] Implement Track & Artist Radio / Recommendations endpoint (`GET /v1/recommendations`, "Made for You", "New Releases")
 - [x] Fix session loss handling, purge cache on expiry, prevent login flicker and polish non-card login UI
 - [x] Support multidisc albums with disc groupings and disc headers in album detail view
-- [ ] Implement Spotify-style dedicated artist page with banner, verified badge, monthly listeners, top tracks, and discography tabs
+- [x] Implement Spotify-style dedicated artist page with banner, verified badge, monthly listeners, top tracks, and discography tabs
 
 ### Phase 5: UI Design System, Component Polish & Settings Page
 
