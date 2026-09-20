@@ -165,6 +165,18 @@ pub fn load_ui_language() -> UiLanguage {
         .unwrap_or_default()
 }
 
+pub fn save_audio_bitrate(bitrate: crate::audio::session::AudioBitrate) {
+    let _ = crate::api::cache::DiskMetadataCache::save("audio_bitrate", &bitrate);
+}
+
+#[must_use]
+pub fn load_audio_bitrate() -> crate::audio::session::AudioBitrate {
+    crate::api::cache::DiskMetadataCache::load::<crate::audio::session::AudioBitrate>(
+        "audio_bitrate",
+    )
+    .unwrap_or_default()
+}
+
 pub fn load_last_playback_state(playback: &mut PlaybackState) {
     let saved_vol = load_saved_volume();
     playback.volume = saved_vol;
@@ -338,6 +350,7 @@ pub enum AppState {
         ui_scale: f32,
         accent_tone: crate::ui::theme::AccentTone,
         ui_language: UiLanguage,
+        audio_bitrate: crate::audio::session::AudioBitrate,
     },
 }
 
@@ -477,6 +490,7 @@ pub enum Message {
     SetAccentTone(crate::ui::theme::AccentTone),
     OpenSpotifyAccount,
     SetUiLanguage(UiLanguage),
+    SetAudioBitrate(crate::audio::session::AudioBitrate),
     AppCloseRequested,
 }
 
@@ -1010,6 +1024,7 @@ impl App {
                     ui_scale: load_ui_scale(),
                     accent_tone: load_accent_tone(),
                     ui_language: load_ui_language(),
+                    audio_bitrate: load_audio_bitrate(),
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -1032,7 +1047,11 @@ impl App {
                                 AppError::Auth("No access token available".to_string())
                             })?;
                             let access_token = token_ref.access_token.clone();
-                            crate::audio::session::connect_with_token(&access_token).await
+                            crate::audio::session::connect_with_token_and_bitrate(
+                                &access_token,
+                                load_audio_bitrate(),
+                            )
+                            .await
                         },
                         |res| match res {
                             Ok(audio_session) => Message::AudioSessionConnected(audio_session),
@@ -3094,6 +3113,13 @@ impl App {
                 }
                 Task::none()
             }
+            Message::SetAudioBitrate(bitrate) => {
+                if let AppState::Main { audio_bitrate, .. } = &mut self.state {
+                    *audio_bitrate = bitrate;
+                    save_audio_bitrate(bitrate);
+                }
+                Task::none()
+            }
             Message::AppCloseRequested => {
                 if let AppState::Main {
                     playback,
@@ -3168,6 +3194,7 @@ impl App {
                 ui_scale,
                 accent_tone,
                 ui_language,
+                audio_bitrate,
                 ..
             } => crate::ui::main_layout::view(
                 nav_item,
@@ -3208,6 +3235,7 @@ impl App {
                 *ui_scale,
                 *accent_tone,
                 *ui_language,
+                *audio_bitrate,
             ),
         };
 
@@ -3647,6 +3675,7 @@ mod tests {
                 ui_scale: 1.0,
                 accent_tone: crate::ui::theme::AccentTone::default(),
                 ui_language: UiLanguage::default(),
+                audio_bitrate: crate::audio::session::AudioBitrate::default(),
             },
             audio_tx,
             active_error: Some("Old error".to_string()),
@@ -3787,6 +3816,7 @@ mod tests {
                 ui_scale: 1.0,
                 accent_tone: crate::ui::theme::AccentTone::default(),
                 ui_language: UiLanguage::default(),
+                audio_bitrate: crate::audio::session::AudioBitrate::default(),
             },
             audio_tx,
             active_error: None,
@@ -3829,5 +3859,15 @@ mod tests {
         save_ui_language(UiLanguage::Spanish);
         assert_eq!(load_ui_language(), UiLanguage::Spanish);
         save_ui_language(UiLanguage::default());
+    }
+
+    #[test]
+    fn test_audio_bitrate_persistence() {
+        save_audio_bitrate(crate::audio::session::AudioBitrate::VeryHigh320k);
+        assert_eq!(
+            load_audio_bitrate(),
+            crate::audio::session::AudioBitrate::VeryHigh320k
+        );
+        save_audio_bitrate(crate::audio::session::AudioBitrate::default());
     }
 }

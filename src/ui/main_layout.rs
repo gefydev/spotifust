@@ -96,6 +96,7 @@ pub fn view<'a>(
     ui_scale: f32,
     accent_tone: crate::ui::theme::AccentTone,
     ui_language: crate::app::UiLanguage,
+    audio_bitrate: crate::audio::session::AudioBitrate,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
@@ -138,6 +139,7 @@ pub fn view<'a>(
         accent_tone,
         user_profile,
         ui_language,
+        audio_bitrate,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -692,6 +694,7 @@ fn view_main_content<'a>(
     accent_tone: crate::ui::theme::AccentTone,
     user_profile: Option<&'a crate::api::user::UserProfile>,
     ui_language: crate::app::UiLanguage,
+    audio_bitrate: crate::audio::session::AudioBitrate,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
         return view_settings_page(
@@ -702,6 +705,7 @@ fn view_main_content<'a>(
             accent_tone,
             user_profile,
             ui_language,
+            audio_bitrate,
         );
     }
 
@@ -3617,6 +3621,7 @@ fn render_skeleton_quick_grid<'a>() -> Element<'a, Message> {
 
 #[allow(
     clippy::too_many_lines,
+    clippy::too_many_arguments,
     clippy::items_after_statements,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss
@@ -3629,6 +3634,7 @@ fn view_settings_page<'a>(
     accent_tone: crate::ui::theme::AccentTone,
     user_profile: Option<&'a crate::api::user::UserProfile>,
     ui_language: crate::app::UiLanguage,
+    audio_bitrate: crate::audio::session::AudioBitrate,
 ) -> Element<'a, Message> {
     fn setting_row<'a>(
         title: &'static str,
@@ -3675,31 +3681,6 @@ fn view_settings_page<'a>(
             ..Default::default()
         })
         .color(theme::TEXT_PRIMARY);
-
-    let badge_active = Container::new(
-        Text::new("320 kbps (Very High)")
-            .size(12)
-            .font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..Default::default()
-            })
-            .color(theme::ACCENT),
-    )
-    .padding([6, 12])
-    .style(|_theme: &Theme| container::Style {
-        background: Some(Background::Color(Color {
-            r: theme::ACCENT.r,
-            g: theme::ACCENT.g,
-            b: theme::ACCENT.b,
-            a: 0.15,
-        })),
-        border: Border {
-            color: theme::ACCENT,
-            width: 1.0,
-            radius: theme::RADIUS_PILL.into(),
-        },
-        ..Default::default()
-    });
 
     fn make_badge_enabled<'a>() -> Element<'a, Message> {
         Container::new(
@@ -3909,6 +3890,78 @@ fn view_settings_page<'a>(
         lang_picker = lang_picker.push(lang_btn);
     }
 
+    let mut bitrate_picker = Row::new().spacing(8).align_y(Alignment::Center);
+    for rate in crate::audio::session::AudioBitrate::ALL {
+        let is_selected = rate == audio_bitrate;
+        let rate_btn = Button::new(
+            Text::new(rate.label())
+                .size(12)
+                .font(iced::Font {
+                    weight: if is_selected {
+                        iced::font::Weight::Bold
+                    } else {
+                        iced::font::Weight::Normal
+                    },
+                    ..Default::default()
+                })
+                .color(if is_selected {
+                    Color::WHITE
+                } else {
+                    theme::TEXT_SECONDARY
+                }),
+        )
+        .padding([6, 12])
+        .on_press(Message::SetAudioBitrate(rate))
+        .style(move |_theme, status| {
+            let bg_color = if is_selected {
+                Color {
+                    r: accent_tone.primary().r,
+                    g: accent_tone.primary().g,
+                    b: accent_tone.primary().b,
+                    a: 0.25,
+                }
+            } else {
+                Color {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 0.04,
+                }
+            };
+            let base = iced::widget::button::Style {
+                background: Some(Background::Color(bg_color)),
+                border: Border {
+                    color: if is_selected {
+                        accent_tone.primary()
+                    } else {
+                        theme::BORDER_SUBTLE
+                    },
+                    width: 1.0,
+                    radius: theme::RADIUS_PILL.into(),
+                },
+                ..Default::default()
+            };
+            match status {
+                iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                    background: Some(Background::Color(Color {
+                        r: accent_tone.primary().r,
+                        g: accent_tone.primary().g,
+                        b: accent_tone.primary().b,
+                        a: 0.35,
+                    })),
+                    border: Border {
+                        color: accent_tone.primary(),
+                        width: 1.0,
+                        radius: theme::RADIUS_PILL.into(),
+                    },
+                    ..base
+                },
+                _ => base,
+            }
+        });
+        bitrate_picker = bitrate_picker.push(rate_btn);
+    }
+
     let account_summary = format!("{account_name} • {plan_desc}");
     let main_col = Column::new()
         .spacing(24)
@@ -3941,7 +3994,7 @@ fn view_settings_page<'a>(
         .push(setting_row(
             "Streaming Quality",
             "Highest quality audio streaming available (320 kbps Vorbis for Premium).",
-            badge_active.into(),
+            bitrate_picker.into(),
         ))
         .push(setting_row(
             "Audio Normalization",
