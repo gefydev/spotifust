@@ -488,8 +488,6 @@ pub enum Message {
     MoveQueueItemDown(usize),
     PlayQueueIndex(usize),
     ClearQueue,
-    // Mock UI Actions
-    MockAction,
     // Error Actions
     DismissError,
     // Panel Layout Messages
@@ -1033,7 +1031,7 @@ impl App {
                     Err(_) => Message::CheckLoginFailed,
                 },
             ),
-            Message::CheckLoginFailed | Message::MockAction | Message::PlaybackTick => Task::none(),
+            Message::CheckLoginFailed | Message::PlaybackTick => Task::none(),
 
             Message::LoginSuccess(spotify) => {
                 let mut initial_playback = PlaybackState::default();
