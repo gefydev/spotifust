@@ -268,6 +268,7 @@ pub enum AppState {
         active_context_menu: Option<ContextMenuState>,
         active_modal: Option<ActiveModal>,
         toast_notification: Option<String>,
+        toast_id: u64,
         loaded_images: crate::api::cache::LruCache<String, iced::widget::image::Handle>,
         spotify_client: Option<Arc<rspotify::AuthCodePkceSpotify>>,
         sidebar_width: f32,
@@ -376,6 +377,7 @@ pub enum Message {
     OpenQueuePanel,
     ShowToast(String),
     DismissToast,
+    DismissToastId(u64),
     OperationFinished(Result<String, AppError>),
     // Main UI Messages
     NavigationSelected(NavigationItem),
@@ -537,6 +539,8 @@ impl App {
             AppState::Main {
                 audio_session,
                 playback,
+                dragging_sidebar,
+                dragging_right_panel,
                 ..
             } => {
                 let mut subs = vec![];
@@ -553,13 +557,18 @@ impl App {
                         },
                     ));
                 }
+                if *dragging_sidebar || *dragging_right_panel {
+                    subs.push(iced::event::listen().filter_map(|event| match event {
+                        iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+                            Some(Message::PanelDragMoved(position.x))
+                        }
+                        iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
+                            iced::mouse::Button::Left,
+                        )) => Some(Message::EndPanelDrag),
+                        _ => None,
+                    }));
+                }
                 subs.push(iced::event::listen().filter_map(|event| match event {
-                    iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
-                        Some(Message::PanelDragMoved(position.x))
-                    }
-                    iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
-                        iced::mouse::Button::Left,
-                    )) => Some(Message::EndPanelDrag),
                     iced::Event::Window(iced::window::Event::Resized(size)) => {
                         Some(Message::WindowResized(size.width))
                     }
@@ -926,7 +935,8 @@ impl App {
                     active_context_menu: None,
                     active_modal: None,
                     toast_notification: None,
-                    loaded_images: crate::api::cache::LruCache::new(20),
+                    toast_id: 0,
+                    loaded_images: crate::api::cache::LruCache::new(128),
                     spotify_client: Some(Arc::clone(&spotify_arc)),
                     sidebar_width: sw,
                     right_panel_width: rw,
@@ -2202,23 +2212,15 @@ impl App {
             Message::CopyShareLink(title, url) => {
                 if let AppState::Main {
                     active_context_menu,
-                    toast_notification,
                     ..
                 } = &mut self.state
                 {
                     *active_context_menu = None;
-                    *toast_notification =
-                        Some(format!("Enlace de '{title}' copiado al portapapeles"));
                 }
-                Task::batch(vec![
-                    iced::clipboard::write(url),
-                    Task::perform(
-                        async {
-                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        },
-                        |()| Message::DismissToast,
-                    ),
-                ])
+                let toast_task = self.update(Message::ShowToast(format!(
+                    "Enlace de '{title}' copiado al portapapeles"
+                )));
+                Task::batch(vec![iced::clipboard::write(url), toast_task])
             }
 
             Message::OpenAddToPlaylistModal(uris) => {
@@ -2602,17 +2604,23 @@ impl App {
 
             Message::ShowToast(msg) => {
                 if let AppState::Main {
-                    toast_notification, ..
+                    toast_notification,
+                    toast_id,
+                    ..
                 } = &mut self.state
                 {
+                    *toast_id = toast_id.wrapping_add(1);
+                    let current_id = *toast_id;
                     *toast_notification = Some(msg);
+                    return Task::perform(
+                        async move {
+                            tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+                            current_id
+                        },
+                        Message::DismissToastId,
+                    );
                 }
-                Task::perform(
-                    async {
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    },
-                    |()| Message::DismissToast,
-                )
+                Task::none()
             }
 
             Message::DismissToast => {
@@ -2625,23 +2633,24 @@ impl App {
                 Task::none()
             }
 
-            Message::OperationFinished(res) => {
+            Message::DismissToastId(id) => {
                 if let AppState::Main {
-                    toast_notification, ..
+                    toast_notification,
+                    toast_id,
+                    ..
                 } = &mut self.state
                 {
-                    match res {
-                        Ok(msg) => *toast_notification = Some(msg),
-                        Err(e) => *toast_notification = Some(format!("Error: {e}")),
+                    if *toast_id == id {
+                        *toast_notification = None;
                     }
                 }
-                Task::perform(
-                    async {
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    },
-                    |()| Message::DismissToast,
-                )
+                Task::none()
             }
+
+            Message::OperationFinished(res) => match res {
+                Ok(msg) => self.update(Message::ShowToast(msg)),
+                Err(e) => self.update(Message::ShowToast(format!("Error: {e}"))),
+            },
             Message::ToggleShuffle => {
                 if let AppState::Main {
                     playback,
@@ -2683,10 +2692,10 @@ impl App {
             }
             Message::AddToQueue(track) => {
                 let mut tasks = Vec::new();
+                let mut toast_task = Task::none();
                 if let AppState::Main {
                     user_queue,
                     active_context_menu,
-                    toast_notification,
                     loaded_images,
                     ..
                 } = &mut self.state
@@ -2700,14 +2709,10 @@ impl App {
                     }
                     user_queue.push(track);
                     *active_context_menu = None;
-                    *toast_notification = Some(format!("Added to queue: {title}"));
+                    toast_task =
+                        self.update(Message::ShowToast(format!("Added to queue: {title}")));
                 }
-                tasks.push(Task::perform(
-                    async {
-                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    },
-                    |()| Message::DismissToast,
-                ));
+                tasks.push(toast_task);
                 Task::batch(tasks)
             }
             Message::RemoveFromQueue(idx) => {
@@ -2920,18 +2925,16 @@ impl App {
             ),
             Message::CacheCleared(res) => {
                 if let AppState::Main {
-                    cache_size_bytes,
-                    toast_notification,
-                    ..
+                    cache_size_bytes, ..
                 } = &mut self.state
                 {
                     match res {
                         Ok(freed) => {
                             *cache_size_bytes = 0;
-                            *toast_notification = Some(format!(
+                            return self.update(Message::ShowToast(format!(
                                 "Cache cleared ({} freed)",
                                 crate::api::cache::format_bytes(freed)
-                            ));
+                            )));
                         }
                         Err(e) => {
                             self.active_error = Some(e.to_string());
@@ -3545,7 +3548,8 @@ mod tests {
                 active_context_menu: None,
                 active_modal: None,
                 toast_notification: None,
-                loaded_images: crate::api::cache::LruCache::new(5),
+                toast_id: 0,
+                loaded_images: crate::api::cache::LruCache::new(128),
                 spotify_client: None,
                 sidebar_width: 240.0,
                 right_panel_width: 280.0,
@@ -3682,7 +3686,8 @@ mod tests {
                 active_context_menu: None,
                 active_modal: None,
                 toast_notification: None,
-                loaded_images: crate::api::cache::LruCache::new(20),
+                toast_id: 0,
+                loaded_images: crate::api::cache::LruCache::new(128),
                 spotify_client: None,
                 sidebar_width: 280.0,
                 right_panel_width: 320.0,

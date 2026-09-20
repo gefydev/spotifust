@@ -69,29 +69,63 @@ pub async fn fetch_featured_playlists(
 ) -> Result<Vec<PlaylistSummary>, AppError> {
     use rspotify::clients::BaseClient;
     with_auto_reauth(spotify, || async {
-        let page = spotify
+        let res = spotify
             .featured_playlists(None, None, None, Some(10), Some(0))
-            .await
-            .map_err(map_rspotify_error)?;
+            .await;
 
-        let mut playlists = Vec::new();
-        for item in page.playlists.items {
-            let owner_name = item
-                .owner
-                .display_name
-                .unwrap_or_else(|| item.owner.id.to_string());
-            let image_url = item.images.first().map(|img| img.url.clone());
-            #[allow(deprecated)]
-            let total_tracks = item.tracks.total;
-            playlists.push(PlaylistSummary {
-                id: item.id.to_string(),
-                name: item.name,
-                owner_name,
-                image_url,
-                total_tracks,
-            });
+        if let Ok(page) = res {
+            let mut playlists = Vec::new();
+            for item in page.playlists.items {
+                let owner_name = item
+                    .owner
+                    .display_name
+                    .unwrap_or_else(|| item.owner.id.to_string());
+                let image_url = item.images.first().map(|img| img.url.clone());
+                #[allow(deprecated)]
+                let total_tracks = item.tracks.total;
+                playlists.push(PlaylistSummary {
+                    id: item.id.to_string(),
+                    name: item.name,
+                    owner_name,
+                    image_url,
+                    total_tracks,
+                });
+            }
+            Ok(playlists)
+        } else {
+            let search_res = spotify
+                .search(
+                    "Top Hits",
+                    rspotify::model::SearchType::Playlist,
+                    None,
+                    None,
+                    Some(10),
+                    Some(0),
+                )
+                .await
+                .map_err(map_rspotify_error)?;
+
+            let mut playlists = Vec::new();
+            if let rspotify::model::SearchResult::Playlists(page) = search_res {
+                for item in page.items {
+                    let owner_name = item
+                        .owner
+                        .display_name
+                        .unwrap_or_else(|| item.owner.id.to_string());
+                    let image_url = item.images.first().map(|img| img.url.clone());
+                    #[allow(deprecated)]
+                    let total_tracks = item.tracks.total;
+                    playlists.push(PlaylistSummary {
+                        id: item.id.to_string(),
+                        name: item.name,
+                        owner_name,
+                        image_url,
+                        total_tracks,
+                    });
+                }
+            }
+            Ok(playlists)
         }
-        Ok(playlists)
     })
     .await
 }

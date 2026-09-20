@@ -645,7 +645,7 @@ pub fn view_toasts(toast: Option<&String>) -> Element<'_, Message> {
             Row::new()
                 .spacing(12)
                 .align_y(Alignment::Center)
-                .push(Icon::MusicNote.view_colored(16.0, theme::ACCENT))
+                .push(Icon::MusicNote.view_colored(16.0, theme::SPOTIFY_GREEN))
                 .push(
                     Text::new(msg)
                         .size(13)
@@ -662,35 +662,32 @@ pub fn view_toasts(toast: Option<&String>) -> Element<'_, Message> {
                         }),
                 ),
         )
-        .padding([10, 16])
+        .padding([10, 18])
         .style(|_theme: &Theme| iced::widget::container::Style {
-            background: Some(Background::Color(theme::SURFACE_CARD)),
+            background: Some(Background::Color(Color::from_rgb(0.18, 0.18, 0.18))),
             border: Border {
                 radius: theme::RADIUS_PILL.into(),
-                color: theme::ACCENT,
+                color: Color::from_rgba(1.0, 1.0, 1.0, 0.12),
                 width: 1.0,
             },
             shadow: iced::Shadow {
-                color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.5),
                 offset: iced::Vector::new(0.0, 4.0),
                 blur_radius: 12.0,
             },
             ..Default::default()
         });
 
-        Container::new(
-            Column::new()
-                .push(iced::widget::Space::new().height(Length::Fill))
-                .push(
-                    Row::new()
-                        .push(iced::widget::Space::new().width(Length::Fill))
-                        .push(toast_card)
-                        .padding(24),
-                ),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        Column::new()
+            .push(iced::widget::Space::new().height(Length::Fill))
+            .push(
+                Row::new()
+                    .push(iced::widget::Space::new().width(Length::Fill))
+                    .push(toast_card)
+                    .push(iced::widget::Space::new().width(Length::Fixed(24.0))),
+            )
+            .push(iced::widget::Space::new().height(Length::Fixed(104.0)))
+            .into()
     } else {
         Container::new(iced::widget::Space::new()).into()
     }

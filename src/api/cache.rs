@@ -39,15 +39,33 @@ impl ImageCache {
         let file_path = dir.join(filename);
 
         if file_path.exists() {
-            return Ok(file_path);
+            if let Ok(metadata) = fs::metadata(&file_path) {
+                if metadata.len() > 0 {
+                    return Ok(file_path);
+                }
+            }
+            let _ = fs::remove_file(&file_path);
         }
 
-        let bytes = reqwest::get(url)
+        let resp = reqwest::get(url)
             .await
-            .map_err(|e| AppError::Network(format!("Failed to download image from {url}: {e}")))?
+            .map_err(|e| AppError::Network(format!("Failed to download image from {url}: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(AppError::Network(format!(
+                "Image download returned status {}",
+                resp.status()
+            )));
+        }
+
+        let bytes = resp
             .bytes()
             .await
             .map_err(|e| AppError::Network(format!("Failed to read image bytes: {e}")))?;
+
+        if bytes.is_empty() {
+            return Err(AppError::Network("Downloaded empty image bytes".into()));
+        }
 
         fs::write(&file_path, bytes)
             .map_err(|e| AppError::Cache(format!("Failed to save image to disk: {e}")))?;

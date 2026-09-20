@@ -123,7 +123,7 @@ pub async fn fetch_currently_playing(
     .await
 }
 
-#[allow(clippy::missing_errors_doc)]
+#[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
 pub async fn fetch_recommendations(
     spotify: &AuthCodePkceSpotify,
     seed_track_ids: &[String],
@@ -141,7 +141,7 @@ pub async fn fetch_recommendations(
     }
 
     with_auto_reauth(spotify, || async {
-        let recs = spotify
+        let recs_res = spotify
             .recommendations(
                 std::iter::empty(),
                 None::<Vec<rspotify::model::ArtistId<'_>>>,
@@ -150,33 +150,112 @@ pub async fn fetch_recommendations(
                 None,
                 Some(20),
             )
+            .await;
+
+        if let Ok(recs) = recs_res {
+            let mut tracks = Vec::new();
+            for track in recs.tracks {
+                let artist = track
+                    .artists
+                    .iter()
+                    .map(|a| a.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                let track_id = track
+                    .id
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string);
+                let uri = track.id.as_ref().map_or_else(String::new, Id::uri);
+
+                tracks.push(TopTrack {
+                    id: track_id,
+                    title: track.name,
+                    artist,
+                    album: String::new(),
+                    duration_ms: u32::try_from(track.duration.num_milliseconds()).unwrap_or(0),
+                    uri,
+                    image_url: None,
+                    explicit: track.explicit,
+                });
+            }
+            if !tracks.is_empty() {
+                return Ok(tracks);
+            }
+        }
+
+        if let Some(first_track_id) = track_ids.first() {
+            if let Ok(full_track) = spotify.track(first_track_id.clone(), None).await {
+                if let Some(first_artist) = full_track.artists.first() {
+                    let search_query = format!("artist:\"{}\"", first_artist.name);
+                    if let Ok(rspotify::model::SearchResult::Tracks(tracks_page)) = spotify
+                        .search(
+                            &search_query,
+                            rspotify::model::SearchType::Track,
+                            None,
+                            None,
+                            Some(20),
+                            Some(0),
+                        )
+                        .await
+                    {
+                        let mut fallback_tracks = Vec::new();
+                        for t in tracks_page.items {
+                            let artist = t
+                                .artists
+                                .iter()
+                                .map(|a| a.name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let track_id =
+                                t.id.as_ref().map_or_else(String::new, ToString::to_string);
+                            let uri = t.id.as_ref().map_or_else(String::new, Id::uri);
+                            let image_url = t.album.images.first().map(|img| img.url.clone());
+                            fallback_tracks.push(TopTrack {
+                                id: track_id,
+                                title: t.name,
+                                artist,
+                                album: t.album.name,
+                                duration_ms: u32::try_from(t.duration.num_milliseconds())
+                                    .unwrap_or(0),
+                                uri,
+                                image_url,
+                                explicit: t.explicit,
+                            });
+                        }
+                        if !fallback_tracks.is_empty() {
+                            return Ok(fallback_tracks);
+                        }
+                    }
+                }
+            }
+        }
+
+        let top = spotify
+            .current_user_top_tracks_manual(None, Some(20), None)
             .await
             .map_err(map_rspotify_error)?;
 
         let mut tracks = Vec::new();
-        for track in recs.tracks {
-            let artist = track
+        for t in top.items {
+            let artist = t
                 .artists
                 .iter()
                 .map(|a| a.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-
-            let track_id = track
-                .id
-                .as_ref()
-                .map_or_else(String::new, ToString::to_string);
-            let uri = track.id.as_ref().map_or_else(String::new, Id::uri);
-
+            let track_id = t.id.as_ref().map_or_else(String::new, ToString::to_string);
+            let uri = t.id.as_ref().map_or_else(String::new, Id::uri);
+            let image_url = t.album.images.first().map(|img| img.url.clone());
             tracks.push(TopTrack {
                 id: track_id,
-                title: track.name,
+                title: t.name,
                 artist,
-                album: String::new(),
-                duration_ms: u32::try_from(track.duration.num_milliseconds()).unwrap_or(0),
+                album: t.album.name,
+                duration_ms: u32::try_from(t.duration.num_milliseconds()).unwrap_or(0),
                 uri,
-                image_url: None,
-                explicit: track.explicit,
+                image_url,
+                explicit: t.explicit,
             });
         }
         Ok(tracks)

@@ -76,35 +76,69 @@ pub async fn fetch_new_releases(
     use rspotify::clients::BaseClient;
     with_auto_reauth(spotify, || async {
         #[allow(deprecated)]
-        let page = spotify
-            .new_releases_manual(None, Some(10), Some(0))
-            .await
-            .map_err(map_rspotify_error)?;
+        let page_res = spotify.new_releases_manual(None, Some(10), Some(0)).await;
 
-        let mut albums = Vec::new();
-        for full_album in page.items {
-            let artist_name = full_album
-                .artists
-                .iter()
-                .map(|a| a.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
+        if let Ok(page) = page_res {
+            let mut albums = Vec::new();
+            for full_album in page.items {
+                let artist_name = full_album
+                    .artists
+                    .iter()
+                    .map(|a| a.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
 
-            let image_url = full_album.images.first().map(|img| img.url.clone());
-            let album_id = full_album.id.map_or_else(String::new, |id| id.to_string());
+                let image_url = full_album.images.first().map(|img| img.url.clone());
+                let album_id = full_album.id.map_or_else(String::new, |id| id.to_string());
 
-            let total_tracks = 0;
+                let total_tracks = 0;
 
-            albums.push(AlbumSummary {
-                id: album_id,
-                name: full_album.name,
-                artist_name,
-                image_url,
-                total_tracks,
-                release_date: full_album.release_date.unwrap_or_default(),
-            });
+                albums.push(AlbumSummary {
+                    id: album_id,
+                    name: full_album.name,
+                    artist_name,
+                    image_url,
+                    total_tracks,
+                    release_date: full_album.release_date.unwrap_or_default(),
+                });
+            }
+            Ok(albums)
+        } else {
+            let search_res = spotify
+                .search(
+                    "tag:new",
+                    rspotify::model::SearchType::Album,
+                    None,
+                    None,
+                    Some(10),
+                    Some(0),
+                )
+                .await
+                .map_err(map_rspotify_error)?;
+
+            let mut albums = Vec::new();
+            if let rspotify::model::SearchResult::Albums(page) = search_res {
+                for item in page.items {
+                    let artist_name = item
+                        .artists
+                        .iter()
+                        .map(|a| a.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let image_url = item.images.first().map(|img| img.url.clone());
+                    let album_id = item.id.map_or_else(String::new, |id| id.to_string());
+                    albums.push(AlbumSummary {
+                        id: album_id,
+                        name: item.name,
+                        artist_name,
+                        image_url,
+                        total_tracks: 0,
+                        release_date: item.release_date.unwrap_or_default(),
+                    });
+                }
+            }
+            Ok(albums)
         }
-        Ok(albums)
     })
     .await
 }
