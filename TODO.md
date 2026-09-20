@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- [x] Implement Audio Loudness Normalization (ReplayGain / Spotify Normalization) toggle with persistence and player configuration
+- [x] Implement Gapless Playback transition between tracks with player configuration and settings toggle
 
 ## Development Backlog
 
@@ -116,7 +116,7 @@
 - [ ] Crossfade: Smooth audio crossfade between tracks (configurable duration in Settings)
 - [ ] Implement multi-band DSP Audio Equalizer with presets (Flat, Bass Boost, Vocal, Rock, Pop) integrated into `rodio` audio pipeline
 - [x] Implement Audio Loudness Normalization (ReplayGain / Spotify Normalization) toggle with persistence and player configuration
-- [ ] Implement Gapless Playback transition between tracks
+- [x] Implement Gapless Playback transition between tracks with player configuration and settings toggle
 
 ### Phase 7: System Integration & Local Files
 

@@ -186,6 +186,15 @@ pub fn load_audio_normalization() -> bool {
     crate::api::cache::DiskMetadataCache::load::<bool>("audio_normalization").unwrap_or(true)
 }
 
+pub fn save_gapless_playback(enabled: bool) {
+    let _ = crate::api::cache::DiskMetadataCache::save("gapless_playback", &enabled);
+}
+
+#[must_use]
+pub fn load_gapless_playback() -> bool {
+    crate::api::cache::DiskMetadataCache::load::<bool>("gapless_playback").unwrap_or(true)
+}
+
 pub fn load_last_playback_state(playback: &mut PlaybackState) {
     let saved_vol = load_saved_volume();
     playback.volume = saved_vol;
@@ -361,6 +370,7 @@ pub enum AppState {
         ui_language: UiLanguage,
         audio_bitrate: crate::audio::session::AudioBitrate,
         audio_normalization: bool,
+        gapless_playback: bool,
     },
 }
 
@@ -502,6 +512,7 @@ pub enum Message {
     SetUiLanguage(UiLanguage),
     SetAudioBitrate(crate::audio::session::AudioBitrate),
     ToggleAudioNormalization,
+    ToggleGaplessPlayback,
     AppCloseRequested,
 }
 
@@ -1037,6 +1048,7 @@ impl App {
                     ui_language: load_ui_language(),
                     audio_bitrate: load_audio_bitrate(),
                     audio_normalization: load_audio_normalization(),
+                    gapless_playback: load_gapless_playback(),
                 };
 
                 let spotify_1 = Arc::clone(&spotify_arc);
@@ -1063,6 +1075,7 @@ impl App {
                                 &access_token,
                                 load_audio_bitrate(),
                                 load_audio_normalization(),
+                                load_gapless_playback(),
                             )
                             .await
                         },
@@ -3144,6 +3157,17 @@ impl App {
                 }
                 Task::none()
             }
+            Message::ToggleGaplessPlayback => {
+                if let AppState::Main {
+                    gapless_playback,
+                    ..
+                } = &mut self.state
+                {
+                    *gapless_playback = !*gapless_playback;
+                    save_gapless_playback(*gapless_playback);
+                }
+                Task::none()
+            }
             Message::AppCloseRequested => {
                 if let AppState::Main {
                     playback,
@@ -3220,6 +3244,7 @@ impl App {
                 ui_language,
                 audio_bitrate,
                 audio_normalization,
+                gapless_playback,
                 ..
             } => crate::ui::main_layout::view(
                 nav_item,
@@ -3262,6 +3287,7 @@ impl App {
                 *ui_language,
                 *audio_bitrate,
                 *audio_normalization,
+                *gapless_playback,
             ),
         };
 
@@ -3703,6 +3729,7 @@ mod tests {
                 ui_language: UiLanguage::default(),
                 audio_bitrate: crate::audio::session::AudioBitrate::default(),
                 audio_normalization: true,
+                gapless_playback: true,
             },
             audio_tx,
             active_error: Some("Old error".to_string()),
@@ -3845,6 +3872,7 @@ mod tests {
                 ui_language: UiLanguage::default(),
                 audio_bitrate: crate::audio::session::AudioBitrate::default(),
                 audio_normalization: true,
+                gapless_playback: true,
             },
             audio_tx,
             active_error: None,
@@ -3905,5 +3933,13 @@ mod tests {
         assert!(!load_audio_normalization());
         save_audio_normalization(true);
         assert!(load_audio_normalization());
+    }
+
+    #[test]
+    fn test_gapless_playback_persistence() {
+        save_gapless_playback(false);
+        assert!(!load_gapless_playback());
+        save_gapless_playback(true);
+        assert!(load_gapless_playback());
     }
 }

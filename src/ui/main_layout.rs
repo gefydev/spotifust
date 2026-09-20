@@ -98,6 +98,7 @@ pub fn view<'a>(
     ui_language: crate::app::UiLanguage,
     audio_bitrate: crate::audio::session::AudioBitrate,
     audio_normalization: bool,
+    gapless_playback: bool,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
@@ -142,6 +143,7 @@ pub fn view<'a>(
         ui_language,
         audio_bitrate,
         audio_normalization,
+        gapless_playback,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -702,6 +704,7 @@ fn view_main_content<'a>(
     ui_language: crate::app::UiLanguage,
     audio_bitrate: crate::audio::session::AudioBitrate,
     audio_normalization: bool,
+    gapless_playback: bool,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
         return view_settings_page(
@@ -714,6 +717,7 @@ fn view_main_content<'a>(
             ui_language,
             audio_bitrate,
             audio_normalization,
+            gapless_playback,
         );
     }
 
@@ -3630,6 +3634,7 @@ fn render_skeleton_quick_grid<'a>() -> Element<'a, Message> {
 #[allow(
     clippy::too_many_lines,
     clippy::too_many_arguments,
+    clippy::fn_params_excessive_bools,
     clippy::items_after_statements,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss
@@ -3644,6 +3649,7 @@ fn view_settings_page<'a>(
     ui_language: crate::app::UiLanguage,
     audio_bitrate: crate::audio::session::AudioBitrate,
     audio_normalization: bool,
+    gapless_playback: bool,
 ) -> Element<'a, Message> {
     fn setting_row<'a>(
         title: &'static str,
@@ -4011,6 +4017,11 @@ fn view_settings_page<'a>(
             make_toggle_badge(audio_normalization, Message::ToggleAudioNormalization),
         ))
         .push(section_title("Audio Effects & Crossfade"))
+        .push(setting_row(
+            "Gapless Playback",
+            "Allows playback to transition between continuous album tracks without silence.",
+            make_toggle_badge(gapless_playback, Message::ToggleGaplessPlayback),
+        ))
         .push(setting_row(
             "Crossfade",
             "Allows tracks to crossfade into each other seamlessly.",
