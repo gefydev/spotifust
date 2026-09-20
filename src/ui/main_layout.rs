@@ -97,6 +97,7 @@ pub fn view<'a>(
     accent_tone: crate::ui::theme::AccentTone,
     ui_language: crate::app::UiLanguage,
     audio_bitrate: crate::audio::session::AudioBitrate,
+    audio_normalization: bool,
 ) -> Element<'a, Message> {
     if window_width < 600.0 {
         return view_mini_player(playback, loaded_images);
@@ -140,6 +141,7 @@ pub fn view<'a>(
         user_profile,
         ui_language,
         audio_bitrate,
+        audio_normalization,
     );
     let right_panel = view_right_panel(
         active_right_panel,
@@ -673,7 +675,11 @@ fn view_sidebar_panel<'a>(
         .into()
 }
 
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::too_many_arguments,
+    clippy::fn_params_excessive_bools
+)]
 fn view_main_content<'a>(
     current_nav: NavigationItem,
     selected_playlist: Option<&'a crate::app::SelectedPlaylistState>,
@@ -695,6 +701,7 @@ fn view_main_content<'a>(
     user_profile: Option<&'a crate::api::user::UserProfile>,
     ui_language: crate::app::UiLanguage,
     audio_bitrate: crate::audio::session::AudioBitrate,
+    audio_normalization: bool,
 ) -> Element<'a, Message> {
     if current_nav == NavigationItem::Settings {
         return view_settings_page(
@@ -706,6 +713,7 @@ fn view_main_content<'a>(
             user_profile,
             ui_language,
             audio_bitrate,
+            audio_normalization,
         );
     }
 
@@ -3635,6 +3643,7 @@ fn view_settings_page<'a>(
     user_profile: Option<&'a crate::api::user::UserProfile>,
     ui_language: crate::app::UiLanguage,
     audio_bitrate: crate::audio::session::AudioBitrate,
+    audio_normalization: bool,
 ) -> Element<'a, Message> {
     fn setting_row<'a>(
         title: &'static str,
@@ -3999,7 +4008,7 @@ fn view_settings_page<'a>(
         .push(setting_row(
             "Audio Normalization",
             "Set the same volume level for all tracks during playback.",
-            make_badge_enabled(),
+            make_toggle_badge(audio_normalization, Message::ToggleAudioNormalization),
         ))
         .push(section_title("Audio Effects & Crossfade"))
         .push(setting_row(

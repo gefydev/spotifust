@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- [x] SECTION 3 - Audio Quality: Bitrate selector pills (Normal 96k, High 160k, Very High 320k bound to librespot decoder) with disk persistence
+- [x] Implement Audio Loudness Normalization (ReplayGain / Spotify Normalization) toggle with persistence and player configuration
 
 ## Development Backlog
 
@@ -115,7 +115,7 @@
 - [ ] Spotify Connect: Full bi-directional Spotify Connect integration for remote control and device sync
 - [ ] Crossfade: Smooth audio crossfade between tracks (configurable duration in Settings)
 - [ ] Implement multi-band DSP Audio Equalizer with presets (Flat, Bass Boost, Vocal, Rock, Pop) integrated into `rodio` audio pipeline
-- [ ] Implement Audio Loudness Normalization (ReplayGain / Spotify Normalization)
+- [x] Implement Audio Loudness Normalization (ReplayGain / Spotify Normalization) toggle with persistence and player configuration
 - [ ] Implement Gapless Playback transition between tracks
 
 ### Phase 7: System Integration & Local Files
