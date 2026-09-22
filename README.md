@@ -251,7 +251,7 @@ This project is licensed under the [GNU General Public License v3.0](./LICENSE).
 
 ### Statistics
 
-![Repo analytics](https://githubcard.com/g/A-2be3P6Wv2gb4-U.svg)
+![Repo analytics](https://githubcard.com/gefydev/spotifust.svg?d=nNPcjB9odGHc)
 
 ### Star History
 
